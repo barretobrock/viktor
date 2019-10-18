@@ -21,12 +21,13 @@ setup_args = {
     'author': 'Barret Obrock',
     'author_email': 'barret@barretobrock.ee',
     'packages': find_packages(exclude=['tests']),
+    'dependency_links': [
+        'https://github.com/barretobrock/slacktools/tarball/master#egg=slacktools'
+    ],
     'install_requires': [
         'slacktools'
     ],
-    'dependency_links': [
-        'git+https://github.com/barretobrock/slacktools.git#egg=slacktools'
-    ]
+
 }
 
 setup(**setup_args)

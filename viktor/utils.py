@@ -41,6 +41,7 @@ I'm Viktor. Here's what I can do:
     - `gsheets link`: Shows link to Viktor's GSheet (acronyms, insults, etc..)
     - `show roles`: Shows roles of all the workers of OKR
     - `update dooties [-u @user]`: Updates OKR roles of user (or other user). Useful during a reorg. 
+    - `uwu [-l <1 or 2>] <text_to_uwu>`: makes text pwetty
 *Premium user commands:*
     - `garage`: current snapshot of garage
     - `lights status`: status of all connected lights
@@ -149,6 +150,8 @@ class Viktor:
             response = self.insult(message)
         elif message.startswith('emojis like'):
             response = self.get_emojis_like(message)
+        elif message.startswith('uwu'):
+            response = self.uwu(raw_message)
         elif message.startswith('lights'):
             # lights (status|turn (on|off) <light_name>)
             if user not in self.approved_users:
@@ -649,4 +652,45 @@ class Viktor:
         base_url = 'https://docs.google.com/spreadsheets/d/{}/'
         return base_url.format(Keys().get_key('viktor_sheet'))
 
+    def uwu(self, msg):
+        """uwu-fy a message"""
 
+        if '-l' in msg.split():
+            level = msg.split()[msg.split().index('-l') + 1]
+            level = int(level) if level.isnumeric() else 1
+            text = ' '.join(msg.split()[msg.split().index('-l') + 2:])
+        else:
+            level = 1
+            text = msg.replace('uwu', '').strip()
+
+        if level >= 1:
+            # Level 1: Letter replacement
+            for l in ['lLrR']:
+                text = text.translate(str.maketrans('rRlL', 'wWwW'))
+
+        if level >= 2:
+            # Level 2: Placement of 'uwu' when certain patterns occur
+
+            pattern_whitelist = {
+                'uwu': {
+                    'start': 'u',
+                    'anywhere': ['nu', 'ou', 'du'],
+                },
+                'owo': {
+                    'start': 'o',
+                    'anywhere': ['ow', 'bo', 'do', 'on'],
+                }
+            }
+            # Rebuild the phrase letter by letter
+            phrase = []
+            for word in text.split(' '):
+                for pattern, pattern_dict in pattern_whitelist.items():
+                    if word.startswith(pattern_dict['start']):
+                        word = word.replace(pattern_dict['start'], pattern)
+                    else:
+                        for fragment in pattern_dict['anywhere']:
+                            if fragment in word:
+                                word = word.replace(pattern_dict['start'], pattern)
+                phrase.append(word)
+            text = ' '.join(phrase)
+        return text
