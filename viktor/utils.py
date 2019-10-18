@@ -69,7 +69,7 @@ class Viktor:
         self.approved_users = ['UM35HE6R5', 'UM3E3G72S']
 
         self.gs_dict = {}
-        self.roles_fpath = os.path.join(os.path.expanduser('~'), *['data', 'roles.json'])
+        self.roles_fpath = os.path.abspath('/home/bobrock/data/roles.json')
         self.roles = self.read_roles()
         self._read_in_sheets()
 
@@ -132,7 +132,7 @@ class Viktor:
                 response = 'There ya go!'
         elif message in ['look left', 'look right', 'look up', 'look down', 'oof', 'wink wink', 'bruh']:
             fname = message.replace(' ', '-')
-            fpath = os.path.join(os.path.expanduser('~'), *['Pictures', '{}.jpg'.format(fname)])
+            fpath = os.path.join(os.path.abspath('/home/bobrock'), *['Pictures', '{}.jpg'.format(fname)])
             self.st.upload_file(channel, fpath, 'here-you-go.exe')
         elif message == 'time':
             response = 'The time is {:%F %T}'.format(dt.today())
