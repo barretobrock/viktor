@@ -3,6 +3,7 @@
 import os
 import time
 import re
+import json
 import string
 import traceback
 import pandas as pd
@@ -24,21 +25,25 @@ I'm Viktor. Here's what I can do:
     - `time`
     - `(look (left|right|up|down)|oof|wink wink|bruh)`
     - `access <literally-anything-else>`
-    - `sauce`
+    - `sauce` ?????
 *Useful commands:*
-    - `garage`: current snapshot of garage
     - `garage door status`: whether or not the door is open
-    - `lights status`: status of all connected lights
-    - `lights turn on|off <light>`: turn on/off selected light
     - `temps`: temperatures of all sensor stations
     - `uptime`: printout of devices' current uptime
     - `channel stats`: get a leaderboard of the last 1000 messages posted in the channel
     - `emojis like <regex-pattern>`: get emojis matching the regex pattern
     - `(make sentences|ms) <url1> <url2`: reads in text from the given urls, tries to generate up to 5 sentences
-    - `(acro-guess|ag) <acronym> [<group>]`: there are a lot of acronyms at work. this tries to guess what it means.
+    - `(acro-guess|ag) <acronym> [<group>]`: There are a lot of TLAs at work. This tries to guess what they are.
     - `insult <thing|person> [<group>]`: generates an insult
     - `quote me <thing-to-quote>`: turns your phrase into letter emojis
     - `refresh sheets`: Refreshes the GSheet that holds viktor's insults and acronyms
+    - `gsheets link`: Shows link to Viktor's GSheet (acronyms, insults, etc..)
+    - `show roles`: Shows roles of all the workers of OKR
+    - `update dooties [-u @user]`: Updates OKR roles of user (or other user). Useful during a reorg. 
+*Premium user commands:*
+    - `garage`: current snapshot of garage
+    - `lights status`: status of all connected lights
+    - `lights turn on|off <light>`: turn on/off selected light
 """
 
 
@@ -63,6 +68,8 @@ class Viktor:
         self.approved_users = ['UM35HE6R5', 'UM3E3G72S']
 
         self.gs_dict = {}
+        self.roles_fpath = os.path.join(os.path.expanduser('~'), *['data', 'roles.json'])
+        self.roles = self.read_roles()
         self._read_in_sheets()
 
     def run_rtm(self, startup_msg, terminated_msg):
@@ -104,7 +111,10 @@ class Viktor:
             'uptime': self.get_uptime,
             'garage door status': self.get_garage_status,
             'temps': self.get_temps,
-            'sauce': 'ay <@{user}> u got some jokes!'
+            'sauce': 'ay <@{user}> u got some jokes!',
+            'gsheets link': self.show_gsheet_link(),
+            'show roles': self.show_roles,
+
         }
         response = None
         if message in commands.keys():
@@ -148,6 +158,8 @@ class Viktor:
         elif message.startswith('quote me'):
             msg = message[len('quote me'):].strip()
             response = self.st.build_phrase(msg)
+        elif message.startswith('update dooties'):
+            self.update_roles(user, message)
         elif message == 'refresh sheets':
             self._read_in_sheets()
             response = 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
@@ -565,7 +577,8 @@ class Viktor:
                    'Available sets: `{}`'.format(flag, ','.join(flag_dict.keys()))
         insults = []
         for insult_part in sorted(flag_dict[flag]):
-            part = insult_df.loc[~insult_df[insult_part].isnull(), insult_part].unique().tolist()
+            dont_use = (~insult_df[insult_part].isnull() & insult_df[insult_part] == '')
+            part = insult_df.loc[dont_use, insult_part].unique().tolist()
             insults.append(part[randint(0, len(part) - 1)])
 
         if target == 'me':
@@ -585,25 +598,54 @@ class Viktor:
         """Wrapper to send message to whole channel"""
         self.st.send_message(self.channel_id, message)
 
-    def build_players(self):
-        """
-        Takes in a list of users in channel, sets basic, game-related details and
-            returns a list of dicts for each human player
-        """
-        players = []
-        for user in self.st.get_channel_members(self.channel_id, humans_only=True):
-            user_cleaned = {
-                'id': user['id'],
-                'display_name': user['display_name'].lower(),
-                'real_name': user['name'],
-                'is_bot': user['is_bot'],
-                'skip': False,
-                'dm_cards': False,
-                'score': 0
-            }
-            # Make sure display name is not empty
-            if user_cleaned['display_name'] == '':
-                user_cleaned['display_name'] = user_cleaned['real_name']
-            players.append(user_cleaned)
-        return players
+    def show_roles(self):
+        """Prints users roles to channel"""
+        roles_output = ['OKR Roles (as of last reorg):', '-' * 40]
+        users = self.st.get_channel_members('CM3E3E82J')
+        for k, v in self.roles.items():
+            # Get display name from user id
+            user = self.get_user_by_id(k, users)
+            if 'display_name' in user.keys():
+                name = user['display_name']
+            else:
+                name = user['real_name']
+            roles_output.append('`{}`: {}'.format(name, v))
+        return '\n'.join(roles_output)
+
+    def get_user_by_id(self, user_id, user_list):
+        """Returns a dictionary of player info that has a matching 'id' value in a list of player dicts"""
+        user_idx = self.get_user_index_by_id(user_id, user_list)
+        return user_list[user_idx]
+
+    def get_user_index_by_id(self, user_id, user_list):
+        """Returns the index of a player in a list of players that has a matching 'id' value"""
+        return user_list.index([x for x in user_list if x['id'] == user_id][0])
+
+    def read_roles(self):
+        """Reads in JSON of roles"""
+        with open(self.roles_fpath, 'r') as f:
+            roles = json.loads(f.read())
+        return roles
+
+    def write_roles(self):
+        with open(self.roles_fpath, 'w') as f:
+            f.write(json.dumps(self.roles))
+
+    def update_roles(self, user, msg):
+        """Updates a user with their role"""
+        content = msg[len('update dooties'):].strip()
+        if '-u' in content:
+            # Updating role of other user
+            # Extract user
+            user = content.split()[1].replace('@', '').upper()
+            content = ' '.join(content.split()[2:])
+        self.roles[user] = content
+        # Save roles to file
+        self.write_roles()
+
+    def show_gsheet_link(self):
+        """Prints a link to the gsheet in the channel"""
+        base_url = 'https://docs.google.com/spreadsheets/d/{}/'
+        return base_url.format(Keys().get_key('viktor_sheet'))
+
 
