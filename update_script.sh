@@ -14,7 +14,7 @@ announce_section () {
 
 # DIRECTORY SETUP
 # CD to the location of the package and pull from master
-ST_DIR=${HOME}/extras/cah_bot
+ST_DIR=${HOME}/extras/viktor
 
 # GIT PULL
 # --------------
