@@ -7,6 +7,7 @@ import json
 import string
 import traceback
 import pandas as pd
+import numpy as np
 from datetime import datetime as dt
 from dateutil.relativedelta import relativedelta as reldelta
 from random import randint
@@ -72,6 +73,17 @@ class Viktor:
         self.roles = self.read_roles()
         self._read_in_sheets()
 
+        self.commands = {
+            'help': help_txt,
+            'speak': 'woof',
+            'good bot': 'thanks <@{user}>!',
+            'uptime': self.get_uptime,
+            'garage door status': self.get_garage_status,
+            'temps': self.get_temps,
+            'sauce': 'ay <@{user}> u got some jokes!',
+            'gsheets link': self.show_gsheet_link(),
+        }
+
     def run_rtm(self, startup_msg, terminated_msg):
         """Initiate real-time messaging"""
         killer = GracefulKiller()
@@ -100,25 +112,12 @@ class Viktor:
         else:
             self.log.error('Connection failed.')
 
-    def handle_command(self, channel, message, user):
+    def handle_command(self, channel, message, user, raw_message):
         """Handles a bot command if it's known"""
         # Simple commands that we can map to a function
-        commands = {
-            'help': self.show_help,
-            'speak': 'woof',
-            'good bot': 'thanks <@{user}>!',
-            'time': 'The time is {:%F %T}'.format(dt.today()),
-            'uptime': self.get_uptime,
-            'garage door status': self.get_garage_status,
-            'temps': self.get_temps,
-            'sauce': 'ay <@{user}> u got some jokes!',
-            'gsheets link': self.show_gsheet_link(),
-            'show roles': self.show_roles,
-
-        }
         response = None
-        if message in commands.keys():
-            cmd = commands[message]
+        if message in self.commands.keys():
+            cmd = self.commands[message]
             if callable(cmd):
                 # Call the command
                 cmd()
@@ -135,8 +134,13 @@ class Viktor:
             fname = message.replace(' ', '-')
             fpath = os.path.join(os.path.expanduser('~'), *['Pictures', '{}.jpg'.format(fname)])
             self.st.upload_file(channel, fpath, 'here-you-go.exe')
+        elif message == 'time':
+            response = 'The time is {:%F %T}'.format(dt.today())
+        elif message == 'show roles':
+            response = self.show_roles()
         elif message == 'channel stats':
-            response = self.get_channel_stats(channel)
+            # response = self.get_channel_stats(channel)
+            response = 'This request is currently `borked`. I\'ll repair it later.'
         elif message.startswith('make sentences') or message.startswith('ms '):
             response = self.generate_sentences(message)
         elif any([message.startswith(x) for x in ['acro-guess', 'ag']]):
@@ -159,7 +163,7 @@ class Viktor:
             msg = message[len('quote me'):].strip()
             response = self.st.build_phrase(msg)
         elif message.startswith('update dooties'):
-            self.update_roles(user, message)
+            self.update_roles(user, channel, raw_message)
         elif message == 'refresh sheets':
             self._read_in_sheets()
             response = 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
@@ -167,17 +171,13 @@ class Viktor:
             response = self.sh_response()
         elif message != '':
             response = "I didn't understand this: `{}`\n " \
-                       "Use `dnd help` to get a list of my commands.".format(message)
+                       "Use `v!help` to get a list of my commands.".format(message)
 
         if response is not None:
             resp_dict = {
                 'user': user
             }
             self.st.send_message(channel, response.format(**resp_dict))
-
-    def show_help(self):
-        """Prints help statement to channel"""
-        self.message_grp(help_txt)
 
     def sarcastic_response(self):
         """Sends back a sarcastic response when user is not allowed to use the action requested"""
@@ -577,8 +577,8 @@ class Viktor:
                    'Available sets: `{}`'.format(flag, ','.join(flag_dict.keys()))
         insults = []
         for insult_part in sorted(flag_dict[flag]):
-            dont_use = (~insult_df[insult_part].isnull() & insult_df[insult_part] == '')
-            part = insult_df.loc[dont_use, insult_part].unique().tolist()
+            part_series = insult_df[insult_part].replace('', np.NaN).dropna().unique()
+            part = part_series.tolist()
             insults.append(part[randint(0, len(part) - 1)])
 
         if target == 'me':
@@ -606,7 +606,7 @@ class Viktor:
             # Get display name from user id
             user = self.get_user_by_id(k, users)
             if 'display_name' in user.keys():
-                name = user['display_name']
+                name = user['display_name'] if user['display_name'] != '' else user['real_name']
             else:
                 name = user['real_name']
             roles_output.append('`{}`: {}'.format(name, v))
@@ -631,15 +631,16 @@ class Viktor:
         with open(self.roles_fpath, 'w') as f:
             f.write(json.dumps(self.roles))
 
-    def update_roles(self, user, msg):
+    def update_roles(self, user, channel, msg):
         """Updates a user with their role"""
         content = msg[len('update dooties'):].strip()
         if '-u' in content:
             # Updating role of other user
             # Extract user
-            user = content.split()[1].replace('@', '').upper()
+            user = content.split()[1].replace('<@', '').replace('>', '').upper()
             content = ' '.join(content.split()[2:])
         self.roles[user] = content
+        self.st.send_message(channel, 'Role for <@{}> updated.'.format(user))
         # Save roles to file
         self.write_roles()
 
