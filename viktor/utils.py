@@ -355,37 +355,40 @@ class Viktor:
                 l.location
                 , temps.record_value AS value
                 , temps.record_date
-            FROM (
-                SELECT
-                    loc_id
-                    , MAX(record_date) AS most_recent
-                FROM
-                    homeautodb.temps AS t
-                GROUP BY
-                    loc_id
-                ) AS latest_reads
-            INNER JOIN
-              homeautodb.temps
-            ON
-              temps.loc_id = latest_reads.loc_id AND
-              temps.record_date = latest_reads.most_recent
-            LEFT JOIN homeautodb.locations AS l ON temps.loc_id = l.id
+            FROM 
+                homeautodb.temps
+            LEFT JOIN 
+                homeautodb.locations AS l ON temps.loc_id = l.id
             WHERE
                 l.location != 'test'
+            ORDER BY
+                3 DESC
+            LIMIT 100
         """
         temps = pd.read_sql_query(temp_query, eng.connection)
 
+        cur_temps = temps.groupby('location', as_index=False).first()
         today = pd.datetime.today()
-        for i, row in temps.iterrows():
+        for i, row in cur_temps.iterrows():
+            # Determine the trend of last 6 data points
+            df = temps[temps.location == row['location']].sort_values('record_date', ascending=True).tail(10)
+            # Determine slope of data
+            data = df.value[-2:]
+            coeffs = np.polyfit(data.index.values, list(data), 1)
+            slope = coeffs[-2]
+            cur_temps.loc[i, 'trend'] = np.round(slope, 4)
+
+            # Make the recorded date more human readable
             if not pd.isnull(row['record_date']):
                 datediff = reldelta(today, pd.to_datetime(row['record_date']))
                 datediff = DateTools().human_readable(datediff)
             else:
                 datediff = 'unknown'
-            temps.loc[i, 'ago'] = datediff
+            cur_temps.loc[i, 'ago'] = datediff
 
-        temps = temps[['location', 'value', 'ago']]
-        response = '*Most Recent Temperature Readings:*\n```{}```'.format(self.st.df_to_slack_table(temps))
+        cur_temps = cur_temps[['location', 'value', 'trend', 'ago']]
+
+        response = '*Most Recent Temperature Readings:*\n```{}```'.format(self.st.df_to_slack_table(cur_temps))
         return response
 
     def get_garage_status(self):

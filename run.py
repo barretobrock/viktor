@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from viktor import Viktor
+import viktor
+from datetime import datetime as dt
 from kavalkilu import Log, LogArgParser
 
 
 # Initiate logging
 log = Log('viktor', log_lvl=LogArgParser().loglvl)
 
-viktor = Viktor(log)
+vbot = viktor.Viktor(log)
 try:
-    viktor.run_rtm('Booted up and ready to party! :hyper-tada:', 'Daemon killed gracefully. :party-dead:')
+    info_dict = {
+        'bot': 'CAH bot',
+        'version': viktor.__version__,
+        'update': dt.strptime(viktor.__update_date__, '%Y-%m-%dT%H:%M:%S%z'),
+        'msg': 'Booted up and ready to play!'
+    }
+    bootup_msg = '```{bot:-^50}\n{version:>20} updated {update:%F %T}\n{msg:-^50}```'.format(**info_dict)
+    kill_msg = 'Daemon killed, but gracefully. :party-dead:'
+    vbot.run_rtm(bootup_msg, kill_msg)
 except KeyboardInterrupt:
     log.debug('Script ended manually.')
 finally:
-    viktor.message_grp('Shutdown for maintenance.:dotdotdot:')
+    vbot.message_grp('Shutdown for maintenance.:dotdotdot:')
 
 log.close()
 
