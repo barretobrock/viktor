@@ -42,7 +42,7 @@ I'm Viktor. Here's what I can do:
     - `show roles`: Shows roles of all the workers of OKR
     - `update dooties [-u @user]`: Updates OKR roles of user (or other user). Useful during a reorg. 
     - `uwu [-l <1 or 2>] <text_to_uwu>`: makes text pwetty
-*Premium user commands:*
+*:Q:Premium:Q: user commands:*
     - `garage`: current snapshot of garage
     - `lights status`: status of all connected lights
     - `lights turn on|off <light>`: turn on/off selected light
@@ -75,14 +75,15 @@ class Viktor:
         self._read_in_sheets()
 
         self.commands = {
-            'help': help_txt,
-            'speak': 'woof',
-            'good bot': 'thanks <@{user}>!',
-            'uptime': self.get_uptime,
             'garage door status': self.get_garage_status,
+            'good bot': 'thanks <@{user}>!',
+            'gsheets link': self.show_gsheet_link(),
+            'help': help_txt,
             'temps': self.get_temps,
             'sauce': 'ay <@{user}> u got some jokes!',
-            'gsheets link': self.show_gsheet_link(),
+            'show roles': self.show_roles,
+            'speak': 'woof',
+            'uptime': self.get_uptime,
         }
 
     def run_rtm(self, startup_msg, terminated_msg):
@@ -121,7 +122,7 @@ class Viktor:
             cmd = self.commands[message]
             if callable(cmd):
                 # Call the command
-                cmd()
+                response = cmd()
             else:
                 # Response string
                 response = cmd
@@ -137,8 +138,6 @@ class Viktor:
             self.st.upload_file(channel, fpath, 'here-you-go.exe')
         elif message == 'time':
             response = 'The time is {:%F %T}'.format(dt.today())
-        elif message == 'show roles':
-            response = self.show_roles()
         elif message == 'channel stats':
             # response = self.get_channel_stats(channel)
             response = 'This request is currently `borked`. I\'ll repair it later.'
@@ -170,7 +169,7 @@ class Viktor:
         elif message == 'refresh sheets':
             self._read_in_sheets()
             response = 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
-        elif any([message.startswith(x) for x in ['hey', 'hello', 'hi', 'qq', 'wyd', 'greetings']]):
+        elif any([message.startswith(x) for x in ['hey', 'hello', 'howdy', 'salut', 'hi', 'qq', 'wyd', 'greetings']]):
             response = self.sh_response()
         elif message != '':
             response = "I didn't understand this: `{}`\n " \
