@@ -431,7 +431,8 @@ class Viktor:
 
             if len_match >= max_res:
                 # Append to the emoji_str that it was truncated
-                response = '`**Truncated Results ({}) -> ({})**'.format(len_match, max_res, response)
+                trunc_resp = '`**Truncated Results ({}) -> ({})**`'.format(len_match, max_res)
+                response = '{}\n{}'.format(trunc_resp, response)
         else:
             response = "I couldn't find a pattern from your message. Get your shit together <@{user}>"
         return response
@@ -656,13 +657,14 @@ class Viktor:
 
     def uwu(self, msg):
         """uwu-fy a message"""
+        default_lvl = 2
 
         if '-l' in msg.split():
             level = msg.split()[msg.split().index('-l') + 1]
-            level = int(level) if level.isnumeric() else 1
+            level = int(level) if level.isnumeric() else default_lvl
             text = ' '.join(msg.split()[msg.split().index('-l') + 2:])
         else:
-            level = 1
+            level = default_lvl
             text = msg.replace('uwu', '').strip()
 
         if level >= 1:
