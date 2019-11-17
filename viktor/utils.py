@@ -5,6 +5,7 @@ import time
 import re
 import json
 import string
+import logging
 import traceback
 import pandas as pd
 import numpy as np
@@ -13,7 +14,7 @@ from dateutil.relativedelta import relativedelta as reldelta
 from random import randint
 from slacktools import SlackTools, GracefulKiller
 from kavalkilu import Keys, Hosts, Amcrest, hue_lights, HueBulb, MySQLLocal, DateTools, \
-    WebExtractor, TextCleaner, MarkovText, GSheetReader
+    WebExtractor, TextCleaner, MarkovText, GSheetReader, Log
 
 
 help_txt = """
@@ -36,12 +37,13 @@ I'm Viktor. Here's what I can do:
     - `(make sentences|ms) <url1> <url2`: reads in text from the given urls, tries to generate up to 5 sentences
     - `(acro-guess|ag) <acronym> [<group>]`: There are a lot of TLAs at work. This tries to guess what they are.
     - `insult <thing|person> [<group>]`: generates an insult
+    - `compliment <thing|person>`: generates something vaguely similar to a compliment
     - `quote me <thing-to-quote>`: turns your phrase into letter emojis
     - `refresh sheets`: Refreshes the GSheet that holds viktor's insults and acronyms
     - `gsheets link`: Shows link to Viktor's GSheet (acronyms, insults, etc..)
     - `show roles`: Shows roles of all the workers of OKR
     - `update dooties [-u @user]`: Updates OKR roles of user (or other user). Useful during a reorg. 
-    - `uwu [-l <1 or 2>] <text_to_uwu>`: makes text pwetty
+    - `uwu [-l <1 or 2>] <text_to_uwu>`: makes text pwetty (defaults to lvl 2)
 *:Q:Premium:Q: user commands:*
     - `garage`: current snapshot of garage
     - `lights status`: status of all connected lights
@@ -52,14 +54,18 @@ I'm Viktor. Here's what I can do:
 class Viktor:
     """Handles messaging to and from Slack API"""
 
-    def __init__(self, log):
-        self.log = log
+    def __init__(self, log_name):
+        """
+        :param log_name: str, name of the log to retrieve
+        :param debug: bool,
+        """
+        self.log = Log(log_name, child_name='brain')
         self.bot_name = 'Viktor'
         self.triggers = ['viktor', 'v!']
         self.channel_id = 'CMQGKKR9P'  # #notifications
         # Read in common tools for interacting with Slack's API
         k = Keys()
-        self.st = SlackTools(self.log, triggers=self.triggers, team=k.get_key('okr-name'),
+        self.st = SlackTools(self.log.log_name, triggers=self.triggers, team=k.get_key('okr-name'),
                              xoxp_token=k.get_key('kodubot-usertoken'), xoxb_token=k.get_key('kodubot-useraccess'))
         # Two types of API interaction: bot-level, user-level
         self.bot = self.st.bot
@@ -147,6 +153,8 @@ class Viktor:
             response = self.guess_acronym(message)
         elif message.startswith('insult'):
             response = self.insult(message)
+        elif message.startswith('compliment'):
+            response = self.compliment(message, user)
         elif message.startswith('emojis like'):
             response = self.get_emojis_like(message)
         elif message.startswith('uwu'):
@@ -592,6 +600,50 @@ class Viktor:
         else:
             return "{} aint nothin but a {}".format(target, ' '.join(insults))
 
+    def compliment(self, message, user):
+        """Insults the user at their request"""
+        message_split = message.split()
+        if len(message_split) <= 1:
+            return "I can't work like this! I need something to compliment!!:ragetype:"
+
+        # We can work with this
+        flag = message_split[-1]
+        if '-' in flag:
+            flag = flag.replace('-', '')
+            # Skip the last part of the message, as that's the flag
+            target = ' '.join(message_split[1:-1])
+        else:
+            flag = 'std'
+            # Get the rest of the message
+            target = ' '.join(message_split[1:])
+
+        # Choose the acronym list to use
+        compliment_df = self.gs_dict['compliments']
+        cols = compliment_df.columns.tolist()
+        # Parse the columns into flags and order
+        flag_dict = {}
+        for col in cols:
+            if '_' in col:
+                k, v = col.split('_')
+                if k in flag_dict.keys():
+                    flag_dict[k].append(col)
+                else:
+                    flag_dict[k] = [col]
+
+        if flag not in flag_dict.keys():
+            return 'Cannot find set `{}` in the `compliments` sheet. ' \
+                   'Available sets: `{}`'.format(flag, ','.join(flag_dict.keys()))
+        compliments = []
+        for compliment_part in sorted(flag_dict[flag]):
+            part_series = compliment_df[compliment_part].replace('', np.NaN).dropna().unique()
+            part = part_series.tolist()
+            compliments.append(part[randint(0, len(part) - 1)])
+
+        if target == 'me':
+            return "{} Viktor.".format(' '.join(compliments))
+        else:
+            return "Dear {}, {} <@{}>.".format(target, ' '.join(compliments), user)
+
     def overly_polite(self, message):
         """Responds to 'no, thank you' with an extra 'no' """
         # Count the 'no's
@@ -629,9 +681,12 @@ class Viktor:
 
     def read_roles(self):
         """Reads in JSON of roles"""
-        with open(self.roles_fpath, 'r') as f:
-            roles = json.loads(f.read())
-        return roles
+        if os.path.exists(self.roles_fpath):
+            with open(self.roles_fpath, 'r') as f:
+                roles = json.loads(f.read())
+            return roles
+        else:
+            return {}
 
     def write_roles(self):
         with open(self.roles_fpath, 'w') as f:

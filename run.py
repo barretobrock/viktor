@@ -8,7 +8,7 @@ from kavalkilu import Log, LogArgParser
 # Initiate logging
 log = Log('viktor', log_lvl=LogArgParser().loglvl)
 
-vbot = viktor.Viktor(log)
+vbot = viktor.Viktor(log.log_name)
 try:
     info_dict = {
         'bot': 'CAH bot',
