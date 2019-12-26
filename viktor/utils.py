@@ -62,7 +62,7 @@ class Viktor:
         self.log = Log(log_name, child_name='brain')
         self.bot_name = 'Viktor'
         self.triggers = ['viktor', 'v!']
-        self.channel_id = 'TM1A69HCM'  # #alerts
+        self.channel_id = 'alerts'  # #alerts
         # Read in common tools for interacting with Slack's API
         k = Keys()
         self.st = SlackTools(self.log.log_name, triggers=self.triggers, team=k.get_key('okr-name'),
