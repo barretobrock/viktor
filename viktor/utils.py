@@ -64,7 +64,7 @@ class Viktor:
         self.channel_id = 'alerts'  # #alerts
         # Read in common tools for interacting with Slack's API
         k = Keys()
-        self.st = SlackTools(self.log.log_name, triggers=self.triggers, team=k.get_key('okr-name'),
+        self.st = SlackTools(log_name, triggers=self.triggers, team=k.get_key('okr-name'),
                              xoxp_token=k.get_key('kodubot-usertoken'), xoxb_token=k.get_key('kodubot-useraccess'))
         # Two types of API interaction: bot-level, user-level
         self.bot = self.st.bot
@@ -137,12 +137,20 @@ class Viktor:
             else:
                 self.take_garage_pic(channel)
                 response = 'There ya go!'
+        elif message == 'outdoor':
+            if user not in self.approved_users:
+                response = self.sarcastic_response()
+            else:
+                self.take_outdoor_pic(channel)
+                response = 'There ya go!'
         elif message in ['look left', 'look right', 'look up', 'look down', 'oof', 'wink wink', 'bruh']:
             fname = message.replace(' ', '-')
             fpath = os.path.join(os.path.abspath('/home/bobrock'), *['Pictures', '{}.jpg'.format(fname)])
             self.st.upload_file(channel, fpath, 'here-you-go.exe')
         elif message == 'time':
             response = 'The time is {:%F %T}'.format(dt.today())
+        elif message == 'uwu that':
+            response = self.uwu(self.get_prev_msg_in_channel(channel, raw_message))
         elif message == 'channel stats':
             # response = self.get_channel_stats(channel)
             response = 'This request is currently `borked`. I\'ll repair it later.'
@@ -238,6 +246,26 @@ class Viktor:
         response = '*Stats for this channel:*\n Total messages examined: {}\n' \
                    '```{}```'.format(len(msgs), self.st.df_to_slack_table(res_df))
         return response
+
+    def get_prev_msg_in_channel(self, channel, raw_message):
+        """Gets the previous message from the channel"""
+        resp = self.user.api_call('conversations.history', channel=channel, limit=20)
+        if not resp['ok']:
+            return None
+        if 'messages' in resp.keys():
+            msgs = resp['messages']
+            return msgs[1]['text']
+        return None
+
+    def take_outdoor_pic(self, channel):
+        """Takes snapshot of outside, sends to Slack channel"""
+        # Take a snapshot of the garage
+        garage_cam_ip = Hosts().get_host('ac-v2lis')['ip']
+        creds = Keys().get_key('webcam_api')
+        cam = Amcrest(garage_cam_ip, creds)
+        tempfile = '/tmp/v2lissnap.jpg'
+        cam.camera.snapshot(channel=0, path_file=tempfile)
+        self.st.upload_file(channel, tempfile, 'v2lis_snapshot_{:%F %T}.jpg'.format(dt.today()))
 
     def take_garage_pic(self, channel):
         """Takes snapshot of garage, sends to Slack channel"""
@@ -721,10 +749,17 @@ class Viktor:
             level = default_lvl
             text = msg.replace('uwu', '').strip()
 
+        chars = [
+            '(=｀ω´=)','( =｀ェ´=)','（=´∇｀=）',' (=´∇｀=)',
+            '( = ^ ◡ ^= )','(= ^ -ω- ^=)', '(＾º◡º＾❁)',' (^ ≗ω≗ ^)',
+            '三三ᕕ( ᐛ )ᕗ',' ＼＼\(۶ ᐛ )۶//／／', ' ᕦ( ᐛ )ᕤ',
+            'SMOOO━━(´з(ε｀)━━OOCH★☆', '(〃´∀｀〃)ε｀●)chu♪',
+            '(ʃƪ ˘ ³˘)♥(˘ ε˘ʃƪ)', ' ┐(°益°)┌'
+        ]
+
         if level >= 1:
             # Level 1: Letter replacement
-            for l in ['lLrR']:
-                text = text.translate(str.maketrans('rRlL', 'wWwW'))
+            text = text.translate(str.maketrans('rRlL', 'wWwW'))
 
         if level >= 2:
             # Level 2: Placement of 'uwu' when certain patterns occur
@@ -751,4 +786,8 @@ class Viktor:
                                 word = word.replace(pattern_dict['start'], pattern)
                 phrase.append(word)
             text = ' '.join(phrase)
+
+            # Last step, insert random characters
+            text = chars[np.random.choice(len(chars), 1)[0]] + text + chars[np.random.choice(len(chars), 1)[0]]
+
         return text
