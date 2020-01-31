@@ -26,7 +26,7 @@ setup_args = {
     ],
     'install_requires': [
         'slacktools',
-        'flask==1.1.1'
+        'flask==1.1.1',
         'slackeventsapi==2.1.0'
     ],
 
