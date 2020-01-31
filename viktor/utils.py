@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
-import time
 import re
-import json
 import string
 import pandas as pd
 import numpy as np
 from datetime import datetime as dt
-from dateutil.relativedelta import relativedelta as reldelta
 from random import randint
-from slacktools import SlackTools
-from kavalkilu import Keys, Hosts, Amcrest, MySQLLocal, DateTools, \
-    WebExtractor, TextCleaner, MarkovText, GSheetReader
+from slacktools import SlackTools, GSheetReader
 
 
 help_txt = """
@@ -28,7 +22,6 @@ I'm Viktor. Here's what I can do:
 *Useful commands:*
     - `channel stats`: get a leaderboard of the last 1000 messages posted in the channel
     - `emojis like <regex-pattern>`: get emojis matching the regex pattern
-    - `(make sentences|ms) <url1> <url2`: reads in text from the given urls, tries to generate up to 5 sentences
     - `(acro-guess|ag) <acronym> [<group>]`: There are a lot of TLAs at work. This tries to guess what they are.
     - `insult <thing|person> [<group>]`: generates an insult
     - `compliment <thing|person>`: generates something vaguely similar to a compliment
@@ -69,11 +62,9 @@ class Viktor:
         self.roles = self.read_roles()
 
         self.commands = {
-            'garage door status': self.get_garage_status,
             'good bot': 'thanks <@{user}>!',
             'gsheets link': self.show_gsheet_link(),
             'help': help_txt,
-            'temps': self.get_temps,
             'sauce': 'ay <@{user}> u got some jokes!',
             'speak': 'woof',
         }
@@ -120,8 +111,8 @@ class Viktor:
         elif message == 'channel stats':
             # response = self.get_channel_stats(channel)
             response = 'This request is currently `borked`. I\'ll repair it later.'
-        elif message.startswith('make sentences') or message.startswith('ms '):
-            response = self.generate_sentences(message)
+        # elif message.startswith('make sentences') or message.startswith('ms '):
+        #     response = self.generate_sentences(message)
         elif any([message.startswith(x) for x in ['acro-guess', 'ag']]):
             response = self.guess_acronym(message)
         elif message.startswith('insult'):
@@ -221,92 +212,6 @@ class Viktor:
             return msgs[0]['text']
         return None
 
-    def take_outdoor_pic(self, channel):
-        """Takes snapshot of outside, sends to Slack channel"""
-        # Take a snapshot of the garage
-        garage_cam_ip = Hosts().get_host('ac-v2lis')['ip']
-        creds = Keys().get_key('webcam_api')
-        cam = Amcrest(garage_cam_ip, creds)
-        tempfile = '/tmp/v2lissnap.jpg'
-        cam.camera.snapshot(channel=0, path_file=tempfile)
-        self.st.upload_file(channel, tempfile, 'v2lis_snapshot_{:%F %T}.jpg'.format(dt.today()))
-
-    def take_garage_pic(self, channel):
-        """Takes snapshot of garage, sends to Slack channel"""
-        # Take a snapshot of the garage
-        garage_cam_ip = Hosts().get_host('ac-garage')['ip']
-        creds = Keys().get_key('webcam_api')
-        cam = Amcrest(garage_cam_ip, creds)
-        tempfile = '/tmp/garagesnap.jpg'
-        cam.camera.snapshot(channel=0, path_file=tempfile)
-        self.st.upload_file(channel, tempfile, 'garage_snapshot_{:%F %T}.jpg'.format(dt.today()))
-
-    def get_temps(self):
-        """Gets device temperatures"""
-        eng = MySQLLocal('homeautodb')
-
-        temp_query = """
-            SELECT
-                l.location
-                , temps.record_value AS value
-                , temps.record_date
-            FROM
-                homeautodb.temps
-            LEFT JOIN
-                homeautodb.locations AS l ON temps.loc_id = l.id
-            WHERE
-                l.location != 'test'
-            ORDER BY
-                3 DESC
-            LIMIT 100
-        """
-        temps = pd.read_sql_query(temp_query, eng.connection)
-
-        cur_temps = temps.groupby('location', as_index=False).first()
-        today = pd.datetime.today()
-        for i, row in cur_temps.iterrows():
-            # Determine the trend of last 6 data points
-            df = temps[temps.location == row['location']].sort_values('record_date', ascending=True).tail(10)
-            # Determine slope of data
-            data = df.value[-2:]
-            coeffs = np.polyfit(data.index.values, list(data), 1)
-            slope = coeffs[-2]
-            cur_temps.loc[i, 'trend'] = np.round(slope, 4)
-
-            # Make the recorded date more human readable
-            if not pd.isnull(row['record_date']):
-                datediff = reldelta(today, pd.to_datetime(row['record_date']))
-                datediff = DateTools().human_readable(datediff)
-            else:
-                datediff = 'unknown'
-            cur_temps.loc[i, 'ago'] = datediff
-
-        cur_temps = cur_temps[['location', 'value', 'trend', 'ago']]
-
-        response = '*Most Recent Temperature Readings:*\n```{}```'.format(self.st.df_to_slack_table(cur_temps))
-        return response
-
-    def get_garage_status(self):
-        """Gets device uptime for specific devices"""
-        eng = MySQLLocal('homeautodb')
-
-        garage_status_query = """
-            SELECT
-                d.name
-                , d.status
-                , d.status_chg_date
-                , d.update_date
-            FROM
-                doors AS d
-            WHERE
-                name = 'garage'
-        """
-        garage_status = pd.read_sql_query(garage_status_query, con=eng.connection)
-        status_dict = {k: v[0] for k, v in garage_status.to_dict().items()}
-        response = "*Current Status*: `{status}`\n *Changed at*:" \
-                   " `{status_chg_date:%F %T}`\n *Updated*: `{update_date:%F %T}`".format(**status_dict)
-        return response
-
     def get_emojis_like(self, message, max_res=500):
         """Gets emojis matching in the system that match a given regex pattern"""
 
@@ -332,56 +237,6 @@ class Viktor:
         else:
             response = "I couldn't find a pattern from your message. Get your shit together <@{user}>"
         return response
-
-    def generate_sentences(self, message):
-        """Builds a Markov chain from some text sources"""
-        # Parse out urls
-        msg_split = message.split(' ')
-        matches = [x for x in msg_split if re.search(r'http[s]?:\/\/\S+', x) is not None]
-
-        if len(matches) > 0:
-            # We've got some urls. Make sure we limit it to 5 in case someone's greedy
-            urls = matches[:4]
-            we = WebExtractor()
-            cleaner = TextCleaner()
-            clean_list = []
-            for url in urls:
-                # Collect HTML elements
-                # Slack adds '<' and '>' to the urls. Remove them
-                url = re.sub(r'[<>]', '', url)
-                elems = we.get_matching_elements(url, ['li', 'p', 'span'])
-                # Extract text from tags
-                txt_list = []
-                for elem in elems:
-                    try:
-                        elemtxt = elem.get_text()
-                        # Try to take out any CSS / javascript that may have gotten in
-                        # elemtxt = re.sub(r'(function\s+\w+\(.*\};?|\{.*\})', '', elemtxt)
-                        if len(re.sub('[.,\/#!$%\^&\*;:{}=\-`~()]', '', elemtxt).split(' ')) >= 5:
-                            txt_list.append(elemtxt)
-                    except AttributeError:
-                        pass
-                cleaned = ''.join([cleaner.process_text(x) for x in txt_list])
-                clean_list.append(cleaned)
-
-            mkov = MarkovText(clean_list)
-            sentences = []
-            for attempt in range(5):
-                try:
-                    sentences = mkov.generate_n_sentences(5)
-                    if len(sentences) > 0:
-                        break
-                except TypeError:
-                    pass
-
-            if len(sentences) > 0:
-                # Join them and send them
-                return '\n---\n'.join(sentences)
-            else:
-                return "Hmmm. I wasn't able to make any sense of these urls. I might need a larger text source." \
-                       " Also make sure the text falls in either a 'li', 'p' or 'span' element."
-        else:
-            return "I didn't find a url to use from that text."
 
     def _read_in_sheets(self):
         """Reads in GSheets for Viktor"""
