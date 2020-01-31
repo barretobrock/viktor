@@ -19,6 +19,12 @@ pip3 install git+https://github.com/barretobrock/viktor.git#egg=viktor --upgrade
 python3 run.py
 ```
 
+## App Info
+
+### Scopes
+#### Bot
+ - reactions.add
+#### User
 
 
 
