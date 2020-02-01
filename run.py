@@ -3,7 +3,12 @@
 from viktor.app import app
 
 
+@app.route('/viktor')
+def index():
+    return 'VIKTOR'
+
+
 if __name__ == '__main__':
-    app.run(port=5001)
+    app.run(port=5003)
 
 
