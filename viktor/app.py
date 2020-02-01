@@ -17,7 +17,7 @@ Bot = Viktor(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'])
 app = Flask(__name__)
 
 # Events API listener
-bot_events = SlackEventAdapter(key_dict['signing_secret'], "/vikapi/events", app)
+bot_events = SlackEventAdapter(key_dict['signing_secret'], "/viktor/vikapi/events", app)
 
 
 @bot_events.on('reaction_added')
