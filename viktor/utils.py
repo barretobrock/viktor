@@ -15,6 +15,7 @@ I'm Viktor. Here's what I can do:
     - `(hello|hi|hey|qq|wyd|greetings)`
     - `speak`
     - `good bot`
+    - `tihi`
     - `[no] (thanks|thank you|tanks)`
     - `time`
     - `access <literally-anything-else>`
@@ -54,7 +55,7 @@ class Viktor:
         self.bot_id = self.bot.auth_test()['user_id']
 
         self.approved_users = ['UM35HE6R5', 'UM3E3G72S']
-        self.emoji_list = list(self.st.get_emojis().keys())
+        self.emoji_list = self._get_emojis()
         self.gs_dict = {}
 
         self.viktor_sheet = '1KYEbx2Y953u2fIXcntN_xKjBL_6DS02v7y7OcDjv4XU'
@@ -64,6 +65,7 @@ class Viktor:
         self.commands = {
             'good bot': 'thanks <@{user}>!',
             'gsheets link': self.show_gsheet_link(),
+            'show link': self.show_gsheet_link(),
             'help': help_txt,
             'sauce': 'ay <@{user}> u got some jokes!',
             'speak': 'woof',
@@ -138,6 +140,8 @@ class Viktor:
             response = 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
         elif any([message.startswith(x) for x in ['hey', 'hello', 'howdy', 'salut', 'hi', 'qq', 'wyd', 'greetings']]):
             response = self.sh_response()
+        elif 'tihi' in message:
+            response = self.giggle()
         elif message != '':
             response = "I didn't understand this: `{}`\n " \
                        "Use `v!help` to get a list of my commands.".format(message)
@@ -387,7 +391,16 @@ class Viktor:
         else:
             return "Dear {}, {} <@{}>.".format(target, ' '.join(compliments), user)
 
-    def overly_polite(self, message):
+    @staticmethod
+    def giggle():
+        """Laughs, uncontrollably at times"""
+        # Count the 'no's
+        laugh_cycles = randint(1, 500)
+        response = f'ti{"hi" * laugh_cycles}!'
+        return response
+
+    @staticmethod
+    def overly_polite(message):
         """Responds to 'no, thank you' with an extra 'no' """
         # Count the 'no's
         no_cnt = message.count('no')
@@ -419,7 +432,8 @@ class Viktor:
         user_idx = self.get_user_index_by_id(user_id, user_list)
         return user_list[user_idx]
 
-    def get_user_index_by_id(self, user_id, user_list):
+    @staticmethod
+    def get_user_index_by_id(user_id, user_list):
         """Returns the index of a player in a list of players that has a matching 'id' value"""
         return user_list.index([x for x in user_list if x['id'] == user_id][0])
 
@@ -449,6 +463,13 @@ class Viktor:
 
         return f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
 
+    def _get_emojis(self):
+        """Collect emojis in workspace, remove those that are parts of a larger emoji"""
+        emojis = list(self.st.get_emojis().keys())
+        regex = re.compile('.*[0-9][-_][0-9].*')
+        matches = list(filter(regex.match, emojis))
+        return [x for x in emojis if x not in matches]
+
     def uwu(self, msg):
         """uwu-fy a message"""
         default_lvl = 2
@@ -461,13 +482,8 @@ class Viktor:
             level = default_lvl
             text = msg.replace('uwu', '').strip()
 
-        chars = [
-            '(=｀ω´=)','( =｀ェ´=)','（=´∇｀=）',' (=´∇｀=)',
-            '( = ^ ◡ ^= )','(= ^ -ω- ^=)', '(＾º◡º＾❁)',' (^ ≗ω≗ ^)',
-            '三三ᕕ( ᐛ )ᕗ',' ＼＼\(۶ ᐛ )۶//／／', ' ᕦ( ᐛ )ᕤ',
-            'SMOOO━━(´з(ε｀)━━OOCH★☆', '(〃´∀｀〃)ε｀●)chu♪',
-            '(ʃƪ ˘ ³˘)♥(˘ ε˘ʃƪ)', ' ┐(°益°)┌'
-        ]
+        uwu_df = self.gs_dict['uwu_graphics']
+        chars = uwu_df['uwu'].tolist()
 
         if level >= 1:
             # Level 1: Letter replacement
@@ -502,4 +518,4 @@ class Viktor:
             # Last step, insert random characters
             text = chars[np.random.choice(len(chars), 1)[0]] + text + chars[np.random.choice(len(chars), 1)[0]]
 
-        return text
+        return text.replace('`', ' ')

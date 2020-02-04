@@ -1,7 +1,7 @@
 import os
 from random import randint
-from slackeventsapi import SlackEventAdapter
 from flask import Flask
+from slacktools import SlackEventAdapter
 from .utils import Viktor
 
 
