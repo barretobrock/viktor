@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import re
 import string
+import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime as dt
@@ -25,6 +26,7 @@ I'm Viktor. Here's what I can do:
     - `emojis like <regex-pattern>`: get emojis matching the regex pattern
     - `(acro-guess|ag) <acronym> [<group>]`: There are a lot of TLAs at work. This tries to guess what they are.
     - `insult <thing|person> [<group>]`: generates an insult
+    - `inspire me`: something to brighten your day
     - `compliment <thing|person>`: generates something vaguely similar to a compliment
     - `quote me <thing-to-quote>`: turns your phrase into letter emojis
     - `refresh sheets`: Refreshes the GSheet that holds viktor's insults and acronyms
@@ -104,6 +106,8 @@ class Viktor:
             response = 'The time is {:%F %T}'.format(dt.today())
         elif message == 'uwu that':
             response = self.uwu(self.get_prev_msg_in_channel(event_dict))
+        elif message == 'inspire me':
+            self.inspirational(channel)
         elif message == 'show roles':
             response = 'This is currently `borked`'
             # roles_output = self.show_roles()
@@ -407,6 +411,18 @@ class Viktor:
         no_cnt += 1
         response = '{}, thank you!'.format(', '.join(['no'] * no_cnt)).capitalize()
         return response
+
+    def inspirational(self, channel):
+        """Sends a random inspirational message"""
+        resp = requests.get('http://inspirobot.me/api?generate=true')
+        if resp.status_code == 200:
+            url = resp.text
+            # Download img
+            img = requests.get(url)
+            if img.status_code == 200:
+                with open('/tmp/inspirational.jpg', 'wb') as f:
+                    f.write(img.content)
+                self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
 
     def message_grp(self, message):
         """Wrapper to send message to whole channel"""
