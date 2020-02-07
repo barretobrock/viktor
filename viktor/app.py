@@ -62,3 +62,30 @@ def scan_message(event_data):
                 Bot.st.send_message(msg_packet['channel'], "Exception occurred: \n```{}```".format(exception_msg))
 
 
+@bot_events.on('emoji_changed')
+def notify_new_emojis(event_data):
+    event = event_data['event']
+    # Make a post about a new emoji being added in the #emoji_suggestions channel
+    emoji_chan = 'CLWCPQ2TV'
+    if event['subtype'] == 'add':
+        if 'name' in event.keys():
+            emoji = [event['name']]
+        else:
+            emoji = event['names']
+        Bot.st.send_message(emoji_chan, f'New emoji added: {" ".join([f":{x}:" for x in emoji])}')
+
+
+@bot_events.on('user_change')
+def notify_new_statuses(event_data):
+    event = event_data['event']
+    # Post to #general
+    general_chan = 'CMEND3W3H'
+    user_info = event['user']
+    if 'profile' in user_info.keys():
+        profile_info = user_info['profile']
+        if 'status_text' in profile_info.keys():
+            status = profile_info['status_text']
+            emoji = profile_info.get('status_emoji', '')
+            msg = f'<@{user_info["id"]}> updated their status! {emoji}`{status}`'
+            Bot.st.send_message(general_chan, msg)
+
