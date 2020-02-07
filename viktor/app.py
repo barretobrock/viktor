@@ -14,6 +14,11 @@ for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN']:
         key_dict[t.lower()] = f.read().strip()
 
 Bot = Viktor(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'])
+# Include a means of halting duplicate requests from being handled
+#   until I can figure out a better async protocol
+message_events = []
+emoji_events = []
+user_events = []
 app = Flask(__name__)
 
 # Events API listener
@@ -46,12 +51,16 @@ def scan_message(event_data):
     if event['type'] == 'message' and "subtype" not in event:
         trigger, message, raw_message = Bot.st.parse_direct_mention(event['text'])
         if trigger in Bot.triggers:
-            msg_packet = {
-                'message': message.strip(),
-                'raw_message': raw_message.strip()
-            }
-            # Add in all the other stuff
-            msg_packet.update(event)
+            # Build a message hash
+            msg_hash = f'{event["channel"]}_{event["ts"]}'
+            if msg_hash not in message_events:
+                message_events.append(msg_hash)
+                msg_packet = {
+                    'message': message.strip(),
+                    'raw_message': raw_message.strip()
+                }
+                # Add in all the other stuff
+                msg_packet.update(event)
 
     if msg_packet is not None:
         try:
@@ -68,11 +77,11 @@ def notify_new_emojis(event_data):
     # Make a post about a new emoji being added in the #emoji_suggestions channel
     emoji_chan = 'CLWCPQ2TV'
     if event['subtype'] == 'add':
-        if 'name' in event.keys():
-            emoji = [event['name']]
-        else:
-            emoji = event['names']
-        Bot.st.send_message(emoji_chan, f'New emoji added: {" ".join([f":{x}:" for x in emoji])}')
+        emoji = event['name']
+        if emoji not in emoji_events:
+            # Add it for future checks
+            emoji_events.append(emoji)
+            Bot.st.send_message(emoji_chan, f'New emoji added: :{emoji}:')
 
 
 @bot_events.on('user_change')
@@ -81,11 +90,14 @@ def notify_new_statuses(event_data):
     # Post to #general
     general_chan = 'CMEND3W3H'
     user_info = event['user']
+    uid = user_info['id']
     if 'profile' in user_info.keys():
         profile_info = user_info['profile']
         if 'status_text' in profile_info.keys():
             status = profile_info['status_text']
             emoji = profile_info.get('status_emoji', '')
-            msg = f'<@{user_info["id"]}> updated their status! {emoji}`{status}`'
-            Bot.st.send_message(general_chan, msg)
+            status_hash = f':{emoji}: {status}'
+            if status_hash not in user_events:
+                msg = f'<@{uid}> updated their status! {status_hash}'
+                Bot.st.send_message(general_chan, msg)
 
