@@ -106,14 +106,20 @@ class Viktor:
             response = 'The time is {:%F %T}'.format(dt.today())
         elif message == 'uwu that':
             response = self.uwu(self.get_prev_msg_in_channel(event_dict))
-        elif message == 'inspire me':
+        elif 'inspir' in message:
+            # inspire me | give inspiration | inspirational pic
             self.inspirational(channel)
         elif message == 'show roles':
-            response = 'This is currently `borked`'
-            # roles_output = self.show_roles()
-            #
-            # for role_part in roles_output:
-            #     self.st.send_message(channel, f'```{role_part}```')
+            roles_output = self.show_roles()
+            role_txt = ''
+            for role_part in roles_output:
+                # Instead of sending a message for every role, try to combine some rolls
+                #   as long as they're below a certain text limit
+                if len(role_txt) >= 2000:
+                    self.st.send_message(channel, role_txt)
+                    role_txt = role_part
+                else:
+                    role_txt += f'\n{role_part}'
         elif message == 'channel stats':
             # response = self.get_channel_stats(channel)
             response = 'This request is currently `borked`. I\'ll repair it later.'
@@ -137,8 +143,7 @@ class Viktor:
             msg = message[len('quote me'):].strip()
             response = self.st.build_phrase(msg)
         elif message.startswith('update dooties'):
-            response = 'This is currently `borked`'
-            # self.update_roles(user, channel, raw_message)
+            self.update_roles(user, channel, raw_message)
         elif message == 'refresh sheets':
             self._read_in_sheets()
             response = 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
@@ -430,16 +435,18 @@ class Viktor:
 
     def show_roles(self):
         """Prints users roles to channel"""
-        roles_output = ['OKR Roles (as of last reorg):', '-' * 40]
-
+        roles_output = ['**OKR Roles (as of last reorg)**:', '=' * 10]
         users = self.st.get_channel_members('CM3E3E82J')
-        user_dict = {x['id']: x['name'] for x in users}
 
         for user in users:
-            if user in self.roles['user'].tolist():
-                self.roles.loc[self.roles['user'] == user, 'name'] = user_dict[user]
+            user_id = user['id']
+            user_name = user['display_name'] if user['display_name'] != '' else user['name']
+            if user_id in self.roles['user'].tolist():
+                self.roles.loc[self.roles['user'] == user_id, 'name'] = user_name
 
-        roles_output.append(self.st.df_to_slack_table(self.roles[['name', 'role']]))
+        # Iterate through roles, print them out
+        for i, row in self.roles.iterrows():
+            roles_output.append(f'`{row["name"]}`: {row["role"]}')
 
         return roles_output
 
@@ -476,7 +483,6 @@ class Viktor:
 
     def show_gsheet_link(self):
         """Prints a link to the gsheet in the channel"""
-
         return f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
 
     def _get_emojis(self):
@@ -507,11 +513,10 @@ class Viktor:
 
         if level >= 2:
             # Level 2: Placement of 'uwu' when certain patterns occur
-
             pattern_whitelist = {
                 'uwu': {
                     'start': 'u',
-                    'anywhere': ['nu', 'ou', 'du'],
+                    'anywhere': ['nu', 'ou', 'du', 'un', 'bu'],
                 },
                 'owo': {
                     'start': 'o',
@@ -532,6 +537,8 @@ class Viktor:
             text = ' '.join(phrase)
 
             # Last step, insert random characters
-            text = chars[np.random.choice(len(chars), 1)[0]] + text + chars[np.random.choice(len(chars), 1)[0]]
+            prefix_emoji = chars[np.random.choice(len(chars), 1)[0]]
+            suffix_emoji = chars[np.random.choice(len(chars), 1)[0]]
+            text = f'{prefix_emoji} {text} {suffix_emoji}'
 
         return text.replace('`', ' ')

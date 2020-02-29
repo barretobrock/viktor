@@ -19,6 +19,7 @@ Bot = Viktor(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'])
 message_events = []
 emoji_events = []
 user_events = []
+users_list = Bot.st.get_channel_members('CLWCPQ2TV')  # get users in general
 app = Flask(__name__)
 
 # Events API listener
@@ -91,13 +92,26 @@ def notify_new_statuses(event_data):
     general_chan = 'CMEND3W3H'
     user_info = event['user']
     uid = user_info['id']
-    if 'profile' in user_info.keys():
-        profile_info = user_info['profile']
-        if 'status_text' in profile_info.keys():
+    if uid in [x['id'] for x in users_list]:
+        # User's in #general
+        # Get user's index in our list of dicts
+        user_dict_idx = next((idx for (idx, d) in enumerate(users_list) if d['id'] == uid), None)
+        if user_dict_idx is None:
+            return None
+        # Get what info we've already stored on the user
+        user_dict = users_list[user_dict_idx]
+        if 'profile' in user_info.keys():
+            profile_info = user_info['profile']
             status = profile_info['status_text']
             emoji = profile_info.get('status_emoji', '')
-            status_hash = f':{emoji}: {status}'
-            if status_hash not in user_events:
-                msg = f'<@{uid}> updated their status! {status_hash}'
+            status_hash = f'{emoji} {status}'
+            prev_status_hash = f'{user_dict["status_emoji"]} {user_dict["status_text"]}'
+            if status_hash != prev_status_hash:
+                user_dict['status_emoji'] = emoji
+                user_dict['status_text'] = status
+                # Send updated dict to the list of user dicts
+                users_list[user_dict_idx] = user_dict
+                # Message channel about status update
+                msg = f'<@{uid}> updated their status: {status_hash}'
                 Bot.st.send_message(general_chan, msg)
 
