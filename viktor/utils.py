@@ -394,7 +394,8 @@ class Viktor:
             part_series = compliment_df[compliment_part].replace('', np.NaN).dropna().unique()
             part = part_series.tolist()
             txt = part[randint(0, len(part) - 1)]
-            if txt.isalnum():
+            if any([x.isalnum() for x in list(txt)]):
+                # If there are any alphanumerics in the string, append (space will be added)
                 compliments.append(txt)
             else:
                 # txt is likely just a bunch of punctuation. Try to combine with the previous item in the list
@@ -403,6 +404,8 @@ class Viktor:
                 else:
                     # Just append it. We tried.
                     compliments.append(txt)
+
+
         if target == 'me':
             return "{} Viktor.".format(' '.join(compliments))
         else:
