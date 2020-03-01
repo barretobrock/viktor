@@ -106,9 +106,6 @@ class Viktor:
             response = 'The time is {:%F %T}'.format(dt.today())
         elif message == 'uwu that':
             response = self.uwu(self.get_prev_msg_in_channel(event_dict))
-        elif 'inspir' in message:
-            # inspire me | give inspiration | inspirational pic
-            self.inspirational(channel)
         elif message == 'show roles':
             roles_output = self.show_roles()
             role_txt = ''
@@ -119,7 +116,7 @@ class Viktor:
                     self.st.send_message(channel, role_txt)
                     role_txt = role_part
                 else:
-                    role_txt += f'\n{role_part}'
+                    role_txt += f'\n\n{role_part}'
         elif message == 'channel stats':
             # response = self.get_channel_stats(channel)
             response = 'This request is currently `borked`. I\'ll repair it later.'
@@ -147,8 +144,11 @@ class Viktor:
         elif message == 'refresh sheets':
             self._read_in_sheets()
             response = 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
-        elif any([message.startswith(x) for x in ['hey', 'hello', 'howdy', 'salut', 'hi', 'qq', 'wyd', 'greetings']]):
+        elif any([message.startswith(x) for x in ['hey', 'hello', 'howdy', 'salu', 'hi', 'qq', 'wyd', 'greetings']]):
             response = self.sh_response()
+        elif 'inspir' in message:
+            # inspire me | give inspiration | inspirational pic
+            self.inspirational(channel)
         elif 'tihi' in message:
             response = self.giggle()
         elif message != '':
