@@ -393,12 +393,20 @@ class Viktor:
         for compliment_part in sorted(flag_dict[flag]):
             part_series = compliment_df[compliment_part].replace('', np.NaN).dropna().unique()
             part = part_series.tolist()
-            compliments.append(part[randint(0, len(part) - 1)])
-
+            txt = part[randint(0, len(part) - 1)]
+            if txt.isalnum():
+                compliments.append(txt)
+            else:
+                # txt is likely just a bunch of punctuation. Try to combine with the previous item in the list
+                if len(compliments) > 0:
+                    compliments[-1] += txt
+                else:
+                    # Just append it. We tried.
+                    compliments.append(txt)
         if target == 'me':
             return "{} Viktor.".format(' '.join(compliments))
         else:
-            return "Dear {}, {} <@{}>.".format(target, ' '.join(compliments), user)
+            return "Dear {}, {} <@{}>".format(target, ' '.join(compliments), user)
 
     @staticmethod
     def giggle():
