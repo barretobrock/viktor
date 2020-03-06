@@ -117,6 +117,7 @@ class Viktor:
                     role_txt = role_part
                 else:
                     role_txt += f'\n\n{role_part}'
+            self.st.send_message(channel, role_txt)
         elif message == 'channel stats':
             # response = self.get_channel_stats(channel)
             response = 'This request is currently `borked`. I\'ll repair it later.'
