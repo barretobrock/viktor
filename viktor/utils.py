@@ -445,16 +445,49 @@ class Viktor:
         """Wrapper to send message to whole channel"""
         self.st.send_message(self.channel_id, message)
 
+    def read_roles(self):
+        """Reads in JSON of roles"""
+        return self.gs_dict['okr_roles']
+
+    def collect_roleplayers(self):
+        """Collects user id and name for people having OKR roles"""
+        users = self.st.get_channel_members('CM3E3E82J')  # general
+
+        user_df = pd.DataFrame(users)
+        user_df['display_name'] = np.where(user_df['display_name'] == '',
+                                           user_df['real_name'], user_df['display_name'])
+        user_df = user_df.rename(columns={
+            'id': 'user',
+            'name': 'old_name',
+            'display_name': 'name'
+        })
+
+        return user_df[['user', 'name']]
+
+    def write_roles(self):
+        """Writes roles to GSheeets"""
+        user_df = self.collect_roleplayers()
+        self.roles = self.roles[['user', 'role']].merge(user_df, on='user', how='left')
+        self.roles = self.roles[['user', 'name', 'role']]
+
+        self.st.write_sheet(self.viktor_sheet, 'okr_roles', self.roles)
+
+    def update_roles(self, user, channel, msg):
+        """Updates a user with their role"""
+        content = msg[len('update dooties'):].strip()
+        if '-u' in content:
+            # Updating role of other user
+            # Extract user
+            user = content.split()[1].replace('<@', '').replace('>', '').upper()
+            content = ' '.join(content.split()[2:])
+        self.roles.loc[self.roles['user'] == user, 'role'] = content
+        self.st.send_message(channel, 'Role for <@{}> updated.'.format(user))
+        # Save roles to Gsheet
+        self.write_roles()
+
     def show_roles(self):
         """Prints users roles to channel"""
         roles_output = ['**OKR Roles (as of last reorg)**:', '=' * 10]
-        users = self.st.get_channel_members('CM3E3E82J')
-
-        for user in users:
-            user_id = user['id']
-            user_name = user['display_name'] if user['display_name'] != '' else user['name']
-            if user_id in self.roles['user'].tolist():
-                self.roles.loc[self.roles['user'] == user_id, 'name'] = user_name
 
         # Iterate through roles, print them out
         for i, row in self.roles.iterrows():
@@ -471,27 +504,6 @@ class Viktor:
     def get_user_index_by_id(user_id, user_list):
         """Returns the index of a player in a list of players that has a matching 'id' value"""
         return user_list.index([x for x in user_list if x['id'] == user_id][0])
-
-    def read_roles(self):
-        """Reads in JSON of roles"""
-        return self.gs_dict['okr_roles']
-
-    def write_roles(self):
-        """Writes roles to GSheeets"""
-        self.st.write_sheet(self.viktor_sheet, 'okr_roles', self.roles)
-
-    def update_roles(self, user, channel, msg):
-        """Updates a user with their role"""
-        content = msg[len('update dooties'):].strip()
-        if '-u' in content:
-            # Updating role of other user
-            # Extract user
-            user = content.split()[1].replace('<@', '').replace('>', '').upper()
-            content = ' '.join(content.split()[2:])
-        self.roles.loc[self.roles['user'] == user, 'role'] = content
-        self.st.send_message(channel, 'Role for <@{}> updated.'.format(user))
-        # Save roles to Gsheet
-        self.write_roles()
 
     def show_gsheet_link(self):
         """Prints a link to the gsheet in the channel"""
