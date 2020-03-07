@@ -8,7 +8,7 @@ import numpy as np
 from datetime import datetime as dt
 from random import randint
 from slacktools import SlackTools, GSheetReader
-
+from ._version import get_versions
 
 help_txt = """
 I'm Viktor. Here's what I can do:
@@ -65,6 +65,13 @@ class Viktor:
         self._read_in_sheets()
         self.roles = self.read_roles()
 
+        version_dict = get_versions()
+        self.version = version_dict['version']
+        self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
+        bootup_msg = f'Booted up at {pd.datetime.now():%F %T}! '   \
+                     f'\n\t\tv{self.version} (updated {self.update_date})'
+        self.st.send_message('test', bootup_msg)
+
         self.commands = {
             'good bot': 'thanks <@{user}>!',
             'gsheets link': self.show_gsheet_link(),
@@ -72,6 +79,7 @@ class Viktor:
             'help': help_txt,
             'sauce': 'ay <@{user}> u got some jokes!',
             'speak': 'woof',
+            'about': bootup_msg
         }
 
     def handle_command(self, event_dict):
