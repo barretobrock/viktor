@@ -20,7 +20,7 @@ I'm Viktor. Here's what I can do:
     - `[no] (thanks|thank you|tanks)`
     - `time`
     - `access <literally-anything-else>`
-    - `sauce` ?????
+    - `sauce`
 *Useful commands:*
     - `about`: Bootup time of Viktor's current instance, his version and last update date
     - `gsheets link`, `show link`: Shows link to Viktor's GSheet (acronyms, insults, etc..)
@@ -69,8 +69,8 @@ class Viktor:
         version_dict = get_versions()
         self.version = version_dict['version']
         self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
-        bootup_msg = f'Booted up at {pd.datetime.now():%F %T}! '   \
-                     f'\n\t\tv{self.version} (updated {self.update_date})'
+        bootup_msg = f'```Booted up at {pd.datetime.now():%F %T}! '   \
+                     f'\n\t{self.version} (updated {self.update_date})```'
         self.st.send_message('test', bootup_msg)
 
         self.commands = {
@@ -113,7 +113,7 @@ class Viktor:
         #         self.take_outdoor_pic(channel)
         #         response = 'There ya go!'
         elif message == 'time':
-            response = 'The time is {:%F %T}'.format(dt.today())
+            response = 'The server time is `{:%F %T}`'.format(dt.today())
         elif message == 'uwu that':
             response = self.uwu(self.get_prev_msg_in_channel(event_dict))
         elif message in ['show roles', 'show dooties']:
