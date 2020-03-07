@@ -22,18 +22,19 @@ I'm Viktor. Here's what I can do:
     - `access <literally-anything-else>`
     - `sauce` ?????
 *Useful commands:*
-    - `channel stats`: get a leaderboard of the last 1000 messages posted in the channel
-    - `emojis like <regex-pattern>`: get emojis matching the regex pattern
-    - `(acro-guess|ag) <acronym> [<group>]`: There are a lot of TLAs at work. This tries to guess what they are.
-    - `insult <thing|person> [<group>]`: generates an insult
-    - `inspire me`: something to brighten your day
-    - `compliment <thing|person>`: generates something vaguely similar to a compliment
-    - `quote me <thing-to-quote>`: turns your phrase into letter emojis
+    - `gsheets link`, `show link`: Shows link to Viktor's GSheet (acronyms, insults, etc..)
     - `refresh sheets`: Refreshes the GSheet that holds viktor's insults and acronyms
-    - `gsheets link`: Shows link to Viktor's GSheet (acronyms, insults, etc..)
-    - `show roles`: Shows roles of all the workers of OKR
-    - `update dooties [-u @user]`: Updates OKR roles of user (or other user). Useful during a reorg. 
+    - `emojis like <regex-pattern>`: get emojis matching the regex pattern
+    - `channel stats`: get a leaderboard of the last 1000 messages posted in the channel
+    - `show roles`, `show dooties`: Shows roles of all the workers of OKR
+    - `update dooties [-u @user]`: Updates OKR roles of user (or other user). Useful during a reorg.
+*Not-so-useful Commands:*
+    - `(acro-guess|ag) <acronym> [-<group>]`: There are a lot of TLAs at work. This tries to guess what they are.
+    - `insult <thing|person> [-<group>]`: generates an insult
+    - `compliment <thing|person> [-<set>]`: generates something vaguely similar to a compliment
+    - `quote me <thing-to-quote>`: turns your phrase into letter emojis
     - `uwu [-l <1 or 2>] <text_to_uwu>`: makes text pwetty (defaults to lvl 2)
+    - `<any text with "inspir" in it>`: something profound to brighten your day
 """
 
 
@@ -47,7 +48,7 @@ class Viktor:
         """
         self.bot_name = 'Viktor'
         self.triggers = ['viktor', 'v!']
-        self.channel_id = 'alerts'  # #alerts
+        self.alerts_channel = 'alerts'  # #alerts
         # Read in common tools for interacting with Slack's API
         self.st = SlackTools(log_name, triggers=self.triggers, team='orbitalkettlerelay',
                              xoxp_token=xoxp_token, xoxb_token=xoxb_token)
@@ -106,7 +107,7 @@ class Viktor:
             response = 'The time is {:%F %T}'.format(dt.today())
         elif message == 'uwu that':
             response = self.uwu(self.get_prev_msg_in_channel(event_dict))
-        elif message == 'show roles':
+        elif message in ['show roles', 'show dooties']:
             self.build_role_txt(channel)
         elif message == 'channel stats':
             # response = self.get_channel_stats(channel)
@@ -118,7 +119,7 @@ class Viktor:
         elif message.startswith('insult'):
             response = self.insult(message)
         elif message.startswith('compliment'):
-            response = self.compliment(message, user)
+            response = self.compliment(raw_message, user)
         elif message.startswith('emojis like'):
             response = self.get_emojis_like(message)
         elif message.startswith('uwu'):
@@ -303,6 +304,36 @@ class Viktor:
         return ':robot-face: Here are my guesses for *{}*!\n {}'.format(acronym.upper(),
                                                                         '\n_OR_\n'.join(guesses))
 
+    @staticmethod
+    def _grab_flag(msg_split, default_flag):
+        """Collects flag from message. If no flag, uses a default"""
+        # Check if flag is at the end of the msg
+        flag = msg_split[-1]
+        if '-' in flag:
+            flag = flag.replace('-', '')
+            # Skip the last part of the message, as that's the flag
+            target = ' '.join(msg_split[1:-1])
+        else:
+            flag = default_flag
+            # Get the rest of the message
+            target = ' '.join(msg_split[1:])
+        return flag, target
+
+    @staticmethod
+    def _build_flag_dict(col_list):
+        """Builds a dictionary of the columns for a particular sheet that
+            contains several ordered columns grouped under a central theme"""
+        # Parse the columns into flags and order
+        flag_dict = {}
+        for col in col_list:
+            if '_' in col:
+                k, v = col.split('_')
+                if k in flag_dict.keys():
+                    flag_dict[k].append(col)
+                else:
+                    flag_dict[k] = [col]
+        return flag_dict
+
     def insult(self, message):
         """Insults the user at their request"""
         message_split = message.split()
@@ -310,28 +341,12 @@ class Viktor:
             return "I can't work like this! I need something to insult!!:ragetype:"
 
         # We can work with this
-        flag = message_split[-1]
-        if '-' in flag:
-            flag = flag.replace('-', '')
-            # Skip the last part of the message, as that's the flag
-            target = ' '.join(message_split[1:-1])
-        else:
-            flag = 'standard'
-            # Get the rest of the message
-            target = ' '.join(message_split[1:])
+        flag, target = self._grab_flag(message_split, 'standard')
 
         # Choose the acronym list to use
         insult_df = self.gs_dict['insults']
         cols = insult_df.columns.tolist()
-        # Parse the columns into flags and order
-        flag_dict = {}
-        for col in cols:
-            if '_' in col:
-                k, v = col.split('_')
-                if k in flag_dict.keys():
-                    flag_dict[k].append(col)
-                else:
-                    flag_dict[k] = [col]
+        flag_dict = self._build_flag_dict(cols)
 
         if flag not in flag_dict.keys():
             return 'Cannot find set `{}` in the `insults` sheet. ' \
@@ -354,28 +369,12 @@ class Viktor:
             return "I can't work like this! I need something to compliment!!:ragetype:"
 
         # We can work with this
-        flag = message_split[-1]
-        if '-' in flag:
-            flag = flag.replace('-', '')
-            # Skip the last part of the message, as that's the flag
-            target = ' '.join(message_split[1:-1])
-        else:
-            flag = 'std'
-            # Get the rest of the message
-            target = ' '.join(message_split[1:])
+        flag, target = self._grab_flag(message_split, 'std')
 
         # Choose the acronym list to use
         compliment_df = self.gs_dict['compliments']
         cols = compliment_df.columns.tolist()
-        # Parse the columns into flags and order
-        flag_dict = {}
-        for col in cols:
-            if '_' in col:
-                k, v = col.split('_')
-                if k in flag_dict.keys():
-                    flag_dict[k].append(col)
-                else:
-                    flag_dict[k] = [col]
+        flag_dict = self._build_flag_dict(cols)
 
         if flag not in flag_dict.keys():
             return 'Cannot find set `{}` in the `compliments` sheet. ' \
@@ -432,7 +431,7 @@ class Viktor:
 
     def message_grp(self, message):
         """Wrapper to send message to whole channel"""
-        self.st.send_message(self.channel_id, message)
+        self.st.send_message(self.alerts_channel, message)
 
     def read_roles(self):
         """Reads in JSON of roles"""
