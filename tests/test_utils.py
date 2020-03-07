@@ -21,3 +21,4 @@ class TestViktor(unittest.TestCase):
         """Test methods involving roles"""
         self.assertTrue(self.vika.collect_roleplayers().shape[0] > 0)
         self.vika.write_roles()
+        self.vika.build_role_txt(channel='CM376Q90F')

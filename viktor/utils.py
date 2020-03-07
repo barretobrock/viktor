@@ -107,17 +107,7 @@ class Viktor:
         elif message == 'uwu that':
             response = self.uwu(self.get_prev_msg_in_channel(event_dict))
         elif message == 'show roles':
-            roles_output = self.show_roles()
-            role_txt = ''
-            for role_part in roles_output:
-                # Instead of sending a message for every role, try to combine some rolls
-                #   as long as they're below a certain text limit
-                if len(role_txt) >= 2000:
-                    self.st.send_message(channel, role_txt)
-                    role_txt = role_part
-                else:
-                    role_txt += f'\n\n{role_part}'
-            self.st.send_message(channel, role_txt)
+            self.build_role_txt(channel)
         elif message == 'channel stats':
             # response = self.get_channel_stats(channel)
             response = 'This request is currently `borked`. I\'ll repair it later.'
@@ -406,7 +396,6 @@ class Viktor:
                     # Just append it. We tried.
                     compliments.append(txt)
 
-
         if target == 'me':
             return "{} Viktor.".format(' '.join(compliments))
         else:
@@ -494,6 +483,20 @@ class Viktor:
             roles_output.append(f'`{row["name"]}`: {row["role"]}')
 
         return roles_output
+
+    def build_role_txt(self, channel):
+        """Constructs a text blob consisting of roles without exceeding the character limits of Slack"""
+        roles_output = self.show_roles()
+        role_txt = ''
+        for role_part in roles_output:
+            # Instead of sending a message for every role, try to combine some rolls
+            #   as long as they're below a certain text limit
+            if len(role_txt) >= 2000:
+                self.st.send_message(channel, role_txt)
+                role_txt = role_part
+            else:
+                role_txt += f'\n\n{role_part}'
+        self.st.send_message(channel, role_txt)
 
     def get_user_by_id(self, user_id, user_list):
         """Returns a dictionary of player info that has a matching 'id' value in a list of player dicts"""
