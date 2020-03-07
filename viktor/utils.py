@@ -117,7 +117,7 @@ class Viktor:
         elif any([message.startswith(x) for x in ['acro-guess', 'ag']]):
             response = self.guess_acronym(message)
         elif message.startswith('insult'):
-            response = self.insult(message)
+            response = self.insult(raw_message)
         elif message.startswith('compliment'):
             response = self.compliment(raw_message, user)
         elif message.startswith('emojis like'):
@@ -357,7 +357,7 @@ class Viktor:
             part = part_series.tolist()
             insults.append(part[randint(0, len(part) - 1)])
 
-        if target == 'me':
+        if target.lower() == 'me':
             return "You aint nothin but a {}".format(' '.join(insults))
         else:
             return "{} aint nothin but a {}".format(target, ' '.join(insults))

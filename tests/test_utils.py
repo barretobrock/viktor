@@ -32,7 +32,7 @@ class TestViktor(unittest.TestCase):
             self.vika.st.send_message('test', comp)
 
     def test_insults(self):
-        msgs = [' me', ' Capital Test', ' мои друг Валерий', ' doot doot -i', 'NoSpaces']
+        msgs = [' me', ' Capital Test', ' мои друг Валерий', ' doot doot -i', 'NoSpaces', 'MeEeEeeEE -i']
         for msg in msgs:
             comp = self.vika.insult(f'insult {msg}')
             self.vika.st.send_message('test', comp)
