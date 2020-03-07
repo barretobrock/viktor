@@ -22,6 +22,7 @@ I'm Viktor. Here's what I can do:
     - `access <literally-anything-else>`
     - `sauce` ?????
 *Useful commands:*
+    - `about`: Bootup time of Viktor's current instance, his version and last update date
     - `gsheets link`, `show link`: Shows link to Viktor's GSheet (acronyms, insults, etc..)
     - `refresh sheets`: Refreshes the GSheet that holds viktor's insults and acronyms
     - `emojis like <regex-pattern>`: get emojis matching the regex pattern
