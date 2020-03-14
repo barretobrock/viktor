@@ -11,44 +11,22 @@ from slacktools import SlackTools, GSheetReader
 from ._version import get_versions
 
 help_txt = """
-I'm Viktor. Here's what I can do:
-*Basic Commands:*
-    - `(hello|hi|hey|qq|wyd|greetings)`
-    - `speak`
-    - `good bot`
-    - `tihi`
-    - `[no] (thanks|thank you|tanks)`
-    - `time`
-    - `access <literally-anything-else>`
-    - `sauce`
 *Useful commands:*
-    - `about`: Bootup time of Viktor's current instance, his version and last update date
-    - `gsheets link`, `show link`: Shows link to Viktor's GSheet (acronyms, insults, etc..)
-    - `refresh sheets`: Refreshes the GSheet that holds viktor's insults and acronyms
-    - `emojis like <regex-pattern>`: get emojis matching the regex pattern
-    - `channel stats`: get a leaderboard of the last 1000 messages posted in the channel
-    - `show roles`, `show dooties`: Shows roles of all the workers of OKR
-    - `update dooties [-u @user]`: Updates OKR roles of user (or other user). Useful during a reorg.
+    - `onboarding`: Prints out all the material needed to get a new OKR employee up to speed!
 *Not-so-useful Commands:*
-    - `(acro-guess|ag) <acronym> [-<group>]`: There are a lot of TLAs at work. This tries to guess what they are.
-    - `insult <thing|person> [-<group>]`: generates an insult
-    - `compliment <thing|person> [-<set>]`: generates something vaguely similar to a compliment
-    - `quote me <thing-to-quote>`: turns your phrase into letter emojis
-    - `uwu [-l <1 or 2>] <text_to_uwu>`: makes text pwetty (defaults to lvl 2)
-    - `<any text with "inspir" in it>`: something profound to brighten your day
 """
 
 
 class Viktor:
     """Handles messaging to and from Slack API"""
 
-    def __init__(self, log_name, xoxb_token, xoxp_token):
+    def __init__(self, log_name, xoxb_token, xoxp_token, ss_key, onboarding_key, debug=False):
         """
         :param log_name: str, name of the log to retrieve
         :param debug: bool,
         """
         self.bot_name = 'Viktor'
-        self.triggers = ['viktor', 'v!']
+        self.triggers = ['viktor', 'v!'] if not debug else ['deviktor', 'dv!']
         self.alerts_channel = 'alerts'  # #alerts
         # Read in common tools for interacting with Slack's API
         self.st = SlackTools(log_name, triggers=self.triggers, team='orbitalkettlerelay',
@@ -62,107 +40,259 @@ class Viktor:
         self.emoji_list = self._get_emojis()
         self.gs_dict = {}
 
-        self.viktor_sheet = '1KYEbx2Y953u2fIXcntN_xKjBL_6DS02v7y7OcDjv4XU'
+        self.viktor_sheet = ss_key
+        self.onboarding_key = onboarding_key
+        self.viktor_sheet_link = f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
+        self.onboarding_link = f'https://docs.google.com/document/d/{self.onboarding_key}/edit?usp=sharing'
         self._read_in_sheets()
         self.roles = self.read_roles()
 
         version_dict = get_versions()
         self.version = version_dict['version']
         self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
-        bootup_msg = f'```Booted up at {pd.datetime.now():%F %T}! '   \
-                     f'\n\t{self.version} (updated {self.update_date})```'
-        self.st.send_message('test', bootup_msg)
+        self.bootup_msg = f'```Booted up at {pd.datetime.now():%F %T}! '\
+                          f'\n\t{self.version} (updated {self.update_date})```'
+        self.st.send_message('test', self.bootup_msg)
 
-        self.commands = {
-            'good bot': 'thanks <@{user}>!',
-            'gsheets link': self.show_gsheet_link(),
-            'show link': self.show_gsheet_link(),
-            'help': help_txt,
-            'sauce': 'ay <@{user}> u got some jokes!',
-            'speak': 'woof',
-            'about': bootup_msg
+        # This will be built later
+        self.help_txt = ''
+
+        cat_basic = 'basic'
+        cat_useful = 'useful'
+        cat_notsouseful = 'not so useful'
+
+        self.cmd_dict = {
+            r'^help': {
+                'pattern': 'help',
+                'cat': cat_basic,
+                'desc': 'Description of all the commands I respond to!',
+                'value': self.help_txt,
+            },
+            r'^about$': {
+                'pattern': 'about',
+                'cat': cat_useful,
+                'desc': 'Bootup time of Viktor\'s current instance, his version and last update date',
+                'value': self.bootup_msg,
+            },
+            r'good bo[tiy]': {
+                'pattern': 'good bo[tiy]',
+                'cat': cat_basic,
+                'desc': 'Did I do something right for once?',
+                'value': 'thanks <@{user}>!',
+            },
+            r'^(gsheet[s]?|show) link$': {
+                'pattern': '(gsheets|show) link',
+                'cat': cat_useful,
+                'desc': 'Shows link to Viktor\'s GSheet (acronyms, insults, etc..)',
+                'value': self.viktor_sheet_link,
+            },
+            r'^time$': {
+                'pattern': 'time',
+                'cat': cat_basic,
+                'desc': 'Display current server time',
+                'value': [self.get_time],
+            },
+            r'^sauce$': {
+                'pattern': 'sauce',
+                'cat': cat_basic,
+                'desc': 'Handle some ridicule...',
+                'value': 'ay <@{user}> u got some jokes!',
+            },
+            r'^speak$': {
+                'pattern': 'speak',
+                'cat': cat_basic,
+                'desc': '_Really_ basic response here.',
+                'value': 'woof',
+            },
+            r'^uwu that$': {
+                'pattern': 'uwu that',
+                'cat': cat_notsouseful,
+                'desc': 'Uwu the text immediately above this command.',
+                'value': [self.uwu_that, 'channel', 'ts'],
+            },
+            r'^show (roles|doo[td]ies)$': {
+                'pattern': 'show (roles|doo[td]ies)',
+                'cat': cat_useful,
+                'desc': 'Shows current roles of all the wonderful workers of OKR',
+                'value': [self.build_role_txt, 'channel'],
+            },
+            r'^update doo[td]ies': {
+                'pattern': 'update dooties [-u @user]',
+                'cat': cat_useful,
+                'desc': 'Updates OKR roles of user (or other user). Useful during a quick reorg. '
+                        '\n\t\t\t_NOTE: You only have to tag a user if it\'s not you._',
+                'value': [self.update_roles, 'user', 'channel', 'raw_message'],
+            },
+            r'^show my (role|doo[td]ie)$': {
+                'pattern': 'show my (role|doo[td]ie)',
+                'cat': cat_useful,
+                'desc': 'Shows your current role as of the last reorg.',
+                'value': [self.build_role_txt, 'channel', 'user'],
+            },
+            r'^channel stats$': {
+                'pattern': 'channel stats',
+                'cat': cat_useful,
+                'desc': 'Get a leaderboard of the last 1000 messages posted in the channel',
+                'value': [self.get_channel_stats, 'channel'],
+            },
+            r'^(ag|acro[-]?guess)': {
+                'pattern': '(acro-guess|ag) <acronym> [-<group>]',
+                'cat': cat_notsouseful,
+                'desc': 'There are RBNs of TLAs at OKR. This tries RRRRH to guess WTF they mean IRL. '
+                        '\n\t\t\tThe optional group name corresponds to the column name '
+                        'of the acronyms in Viktor\'s spreadsheet',
+                'value': [self.guess_acronym, 'message'],
+            },
+            r'^insult': {
+                'pattern': 'insult <thing|person> [-<group>]',
+                'cat': cat_notsouseful,
+                'desc': 'Generates an insult. The optional group name corresponds to the column name '
+                        'of the insults in Viktor\'s spreadsheet',
+                'value': [self.insult, 'message'],
+            },
+            r'^compliment': {
+                'pattern': 'compliment <thing|person> [-<group>]',
+                'cat': cat_notsouseful,
+                'desc': 'Generates a :q:compliment:q:. The optional group name corresponds to the column name '
+                        'of the compliments in Viktor\'s spreadsheet',
+                'value': [self.compliment, 'raw_message', 'user'],
+            },
+            r'^emojis like': {
+                'pattern': 'emojis like <regex-pattern>',
+                'cat': cat_useful,
+                'desc': 'Get emojis matching the regex pattern',
+                'value': [self.get_emojis_like, 'message'],
+            },
+            r'^refresh emojis$': {
+                'pattern': 'refresh emojis',
+                'cat': cat_useful,
+                'desc': 'Makes Viktor aware of emojis that have been uploaded since his last reboot.',
+                'value': [self._get_emojis],
+            },
+            r'^uwu': {
+                'pattern': 'uwu [-l <1 or 2>] <text_to_uwu>',
+                'cat': cat_notsouseful,
+                'desc': 'Makes text pwettiew and easiew to uwundewstand (defaults to highest uwu level)',
+                'value': [self.uwu, 'raw_message'],
+            },
+            r'(thanks|(no\s?)*\s(t[h]?ank\s?(you|u)))': {
+                'cat': cat_basic,
+                'desc': 'Thank Viktor for something',
+                'value': [self.overly_polite, 'message'],
+            },
+            r'^access': {
+                'pattern': 'access <literally-anything-else>',
+                'cat': cat_notsouseful,
+                'desc': 'Try to gain access to something - whether that be the power grid to your failing '
+                        'theme park on an island off the coast of Costa Rica or something less pressing.',
+                'value': [self.access_something],
+            },
+            r'^quote me': {
+                'pattern': 'quote me <thing-to-quote>',
+                'cat': cat_notsouseful,
+                'desc': 'Turns your quote into letter emojis',
+                'value': [self.quote_me, 'message'],
+            },
+            r'^refresh sheets$': {
+                'pattern': 'refresh sheets',
+                'cat': cat_useful,
+                'desc': 'Pulls in new data from Viktor\'s GSheet.',
+                'value': [self.refresh_sheets],
+            },
+            r'^(he(y|llo)|howdy|salu|hi|qq|wyd|greet|servus|ter|bonj)': {
+                'cat': cat_notsouseful,
+                'desc': 'Responds appropriately to a simple greeting',
+                'value': [self.sh_response],
+            },
+            r'.*inspir.*': {
+                'pattern': '<any text with "inspir" in it>',
+                'cat': cat_notsouseful,
+                'desc': 'Uploads an inspirational picture',
+                'value': [self.inspirational, 'channel'],
+            },
+            r'.*tihi.*': {
+                'pattern': '<any text with "tihi" in it>',
+                'cat': cat_notsouseful,
+                'desc': 'Giggles',
+                'value': [self.giggle],
+            },
+            r'^onbo[a]?r[d]?ing$': {
+                'pattern': '(onboarding|onboring)',
+                'cat': cat_useful,
+                'desc': 'Prints out all the material needed to get a new OKR employee up to speed!',
+                'value': [self.onboarding_docs],
+            }
         }
+
+        # Lastly, build the help text based on the commands above and insert back into the commands dict
+        self.build_help_txt()
+        self.cmd_dict[r'^help']['value'] = self.help_txt
+
+    def build_help_txt(self):
+        """Builds Viktor's description of functions into a giant wall of text"""
+        intro_txt = "Здравствуйте! I'm Viktor (V for short). Here's what I can do:"
+        help_dict = {
+            'basic': [],
+            'useful': [],
+            'not so useful': [],
+        }
+        for k, v in self.cmd_dict.items():
+            if 'pattern' not in v.keys():
+                v['pattern'] = k
+            help_dict[v['cat']].append(f' - `{v["pattern"]}`: {v["desc"]}')
+
+        command_frags = []
+        for k, v in help_dict.items():
+            list_of_cmds = "\n\t".join(v)
+            command_frags.append(f'*{k.title()} Commands*:\n\t{list_of_cmds}')
+
+        self.help_txt = "{}\n{}".format(intro_txt, '\n'.join(command_frags))
+
+    @staticmethod
+    def call_command(cmd, *args, **kwargs):
+        """
+        Calls the command referenced while passing in arguments
+        :return: None or string
+        """
+        return cmd(*args, **kwargs)
 
     def handle_command(self, event_dict):
         """Handles a bot command if it's known"""
         # Simple commands that we can map to a function
         response = None
         message = event_dict['message']
-        raw_message = event_dict['raw_message']
-        user = event_dict['user']
         channel = event_dict['channel']
 
-        if message in self.commands.keys():
-            cmd = self.commands[message]
-            if callable(cmd):
-                # Call the command
-                response = cmd()
-            else:
-                # Response string
-                response = cmd
-        # elif message == 'garage':
-        #     if user not in self.approved_users:
-        #         response = self.sarcastic_response()
-        #     else:
-        #         self.take_garage_pic(channel)
-        #         response = 'There ya go!'
-        # elif message == 'outdoor':
-        #     if user not in self.approved_users:
-        #         response = self.sarcastic_response()
-        #     else:
-        #         self.take_outdoor_pic(channel)
-        #         response = 'There ya go!'
-        elif message == 'time':
-            response = 'The server time is `{:%F %T}`'.format(dt.today())
-        elif message == 'uwu that':
-            response = self.uwu(self.get_prev_msg_in_channel(event_dict))
-        elif message in ['show roles', 'show dooties']:
-            self.build_role_txt(channel)
-        elif message == 'channel stats':
-            # response = self.get_channel_stats(channel)
-            response = 'This request is currently `borked`. I\'ll repair it later.'
-        # elif message.startswith('make sentences') or message.startswith('ms '):
-        #     response = self.generate_sentences(message)
-        elif any([message.startswith(x) for x in ['acro-guess', 'ag']]):
-            response = self.guess_acronym(message)
-        elif message.startswith('insult'):
-            response = self.insult(raw_message)
-        elif message.startswith('compliment'):
-            response = self.compliment(raw_message, user)
-        elif message.startswith('emojis like'):
-            response = self.get_emojis_like(message)
-        elif message.startswith('uwu'):
-            response = self.uwu(raw_message)
-        elif any([x in message for x in ['thank you', 'thanks', 'tanks']]):
-            response = self.overly_polite(message)
-        elif message.startswith('access'):
-            response = ''.join([':ah-ah-ah:'] * randint(5, 50))
-        elif message.startswith('quote me'):
-            msg = message[len('quote me'):].strip()
-            response = self.st.build_phrase(msg)
-        elif message.startswith('update dooties'):
-            self.update_roles(user, channel, raw_message)
-        elif message == 'refresh sheets':
-            self._read_in_sheets()
-            response = 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
-        elif any([message.startswith(x) for x in ['hey', 'hello', 'howdy', 'salu', 'hi', 'qq', 'wyd', 'greetings']]):
-            response = self.sh_response()
-        elif 'inspir' in message:
-            # inspire me | give inspiration | inspirational pic
-            self.inspirational(channel)
-        elif 'tihi' in message:
-            response = self.giggle()
-        elif message != '':
-            response = "I didn't understand this: `{}`\n " \
-                       "Use `v!help` to get a list of my commands.".format(message)
+        is_matched = False
+        for regex, resp_dict in self.cmd_dict.items():
+            match = re.match(regex, message)
+            if match is not None:
+                # We've matched on a command
+                resp = resp_dict['value']
+                if isinstance(resp, list):
+                    # Copy the list to ensure changes aren't propagated to the command list
+                    resp_list = resp.copy()
+                    # Examine list, replace any known strings ('message', 'channel', etc.)
+                    #   with event context variables
+                    for k, v in event_dict.items():
+                        if k in resp_list:
+                            resp_list[resp_list.index(k)] = v
+                    # Function with args; sometimes response can be None
+                    response = self.call_command(*resp_list)
+                else:
+                    # String response
+                    response = resp
+                is_matched = True
+                break
+        if message != '' and not is_matched:
+            response = f"I didn\'t understand this: `{message}`\n " \
+                       f"Use {' or '.join([f'`{x} help`' for x in self.triggers])} to get a list of my commands."
 
         if response is not None:
-            resp_dict = {
-                'user': user
-            }
-            self.st.send_message(channel, response.format(**resp_dict))
+            self.st.send_message(channel, response.format(**event_dict))
 
-    def sarcastic_response(self):
+    @staticmethod
+    def sarcastic_response():
         """Sends back a sarcastic response when user is not allowed to use the action requested"""
         sarcastic_reponses = [
             ''.join([':ah-ah-ah:'] * randint(0, 50)),
@@ -173,6 +303,20 @@ class Viktor:
         ]
 
         return sarcastic_reponses[randint(0, len(sarcastic_reponses) - 1)]
+
+    def onboarding_docs(self):
+        """Returns links to everything needed to bring a new OKR employee up to speed"""
+        docs = f"""
+        Welcome to OKR! We're glad to have you on board! 
+        Check out these links below to get familiar with OKR and the industry we support!
+        
+        Onboarding Doc: {self.onboarding_link}
+        Viktor's GSheet: {self.viktor_sheet_link}
+
+        For any questions, reach out to the CEO or our Head of Recruiting. 
+            Don't know who they are? Well, figure it out!
+        """
+        return docs
 
     def get_channel_stats(self, channel):
         """Collects posting stats for a given channel"""
@@ -202,10 +346,23 @@ class Viktor:
 
         res_df = res_df.reset_index()
         res_df = res_df.rename(columns={'index': 'user'})
-        user_names = pd.DataFrame(self.st.get_users_info(res_df['user'].tolist()))[['id', 'real_name']]
-        res_df = res_df.merge(user_names, left_on='user', right_on='id', how='left').drop(['user', 'id'],
-                                                                                          axis=1)
-        res_df = res_df[['real_name', 'total_messages', 'avg_msg_len']]
+        # Get list of users based on the ids we've got
+        users = self.st.get_users_info(res_df['user'].tolist())
+        user_names = []
+        for user in users:
+            uid = user['id']
+            try:
+                name = user['profile']['display_name']
+            except KeyError:
+                name = user['real_name']
+
+            if name == '':
+                name = user['real_name']
+            user_names.append({'id': uid, 'display_name': name})
+
+        user_names_df = pd.DataFrame(user_names)
+        res_df = res_df.merge(user_names_df, left_on='user', right_on='id', how='left').drop(['user', 'id'], axis=1)
+        res_df = res_df[['display_name', 'total_messages', 'avg_msg_len']]
         res_df['total_messages'] = res_df['total_messages'].astype(int)
         res_df['avg_msg_len'] = res_df['avg_msg_len'].round(1)
         res_df = res_df.sort_values('total_messages', ascending=False)
@@ -213,11 +370,11 @@ class Viktor:
                    '```{}```'.format(len(msgs), self.st.df_to_slack_table(res_df))
         return response
 
-    def get_prev_msg_in_channel(self, event_dict):
+    def get_prev_msg_in_channel(self, channel, timestamp):
         """Gets the previous message from the channel"""
         resp = self.bot.conversations_history(
-            channel=event_dict['channel'],
-            latest=event_dict['ts'],
+            channel=channel,
+            latest=timestamp,
             limit=10)
         if not resp['ok']:
             return None
@@ -482,28 +639,40 @@ class Viktor:
         # Save roles to Gsheet
         self.write_roles()
 
-    def show_roles(self):
+    def show_roles(self, user=None):
         """Prints users roles to channel"""
-        roles_output = ['**OKR Roles (as of last reorg)**:', '=' * 10]
 
-        # Iterate through roles, print them out
-        for i, row in self.roles.iterrows():
-            roles_output.append(f'`{row["name"]}`: {row["role"]}')
+        if user is None:
+            # Printing roles for everyone
+            roles_output = ['*OKR Roles (as of last reorg)*:', '=' * 10]
+            # Iterate through roles, print them out
+            for i, row in self.roles.iterrows():
+                roles_output.append(f'`{row["name"]}`: {row["role"]}')
+        else:
+            # Printing role for an individual user
+            role_row = self.roles[self.roles['user'] == user]
+            if not role_row.empty:
+                roles_output = [f'`{role_row["name"].values[0]}`: {role_row["role"].values[0]}']
+            else:
+                roles_output = ['No roles for you yet. Add them with the `update dooties` command.']
 
         return roles_output
 
-    def build_role_txt(self, channel):
+    def build_role_txt(self, channel, user=None):
         """Constructs a text blob consisting of roles without exceeding the character limits of Slack"""
-        roles_output = self.show_roles()
+        roles_output = self.show_roles(user)
         role_txt = ''
-        for role_part in roles_output:
-            # Instead of sending a message for every role, try to combine some rolls
-            #   as long as they're below a certain text limit
-            if len(role_txt) >= 2000:
-                self.st.send_message(channel, role_txt)
-                role_txt = role_part
-            else:
-                role_txt += f'\n\n{role_part}'
+        if user is None:
+            for role_part in roles_output:
+                # Instead of sending a message for every role, try to combine some rolls
+                #   as long as they're below a certain text limit
+                if len(role_txt) >= 2000:
+                    self.st.send_message(channel, role_txt)
+                    role_txt = role_part
+                else:
+                    role_txt += f'\n\n{role_part}'
+        else:
+            role_txt = '\n'.join(roles_output)
         self.st.send_message(channel, role_txt)
 
     def get_user_by_id(self, user_id, user_list):
@@ -516,16 +685,16 @@ class Viktor:
         """Returns the index of a player in a list of players that has a matching 'id' value"""
         return user_list.index([x for x in user_list if x['id'] == user_id][0])
 
-    def show_gsheet_link(self):
-        """Prints a link to the gsheet in the channel"""
-        return f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
-
     def _get_emojis(self):
         """Collect emojis in workspace, remove those that are parts of a larger emoji"""
         emojis = list(self.st.get_emojis().keys())
         regex = re.compile('.*[0-9][-_][0-9].*')
         matches = list(filter(regex.match, emojis))
         return [x for x in emojis if x not in matches]
+
+    def uwu_that(self, channel, ts):
+        """Retrieves previous message and converts to UwU"""
+        return self.uwu(self.get_prev_msg_in_channel(channel, ts))
 
     def uwu(self, msg):
         """uwu-fy a message"""
@@ -577,3 +746,23 @@ class Viktor:
             text = f'{prefix_emoji} {text} {suffix_emoji}'
 
         return text.replace('`', ' ')
+
+    def quote_me(self, message):
+        """Converts message into letter emojis"""
+        msg = message[len('quote me'):].strip()
+        return self.st.build_phrase(msg)
+
+    def refresh_sheets(self):
+        """Refreshes Viktor's Google Sheet"""
+        self._read_in_sheets()
+        return 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
+
+    @staticmethod
+    def access_something():
+        """Return random number of ah-ah-ah emojis (Jurassic Park movie reference)"""
+        return ''.join([':ah-ah-ah:'] * randint(5, 50))
+
+    @staticmethod
+    def get_time():
+        """Gets the server time"""
+        return f'The server time is `{dt.today():%F %T}`'
