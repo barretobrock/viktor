@@ -9,11 +9,12 @@ bot_name = 'viktor'
 
 key_path = os.path.join(os.path.expanduser('~'), 'keys')
 key_dict = {}
-for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN']:
+for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN', 'ONBOARDING_KEY', 'SPREADSHEET_KEY']:
     with open(os.path.join(key_path, f'{bot_name.upper()}_SLACK_{t}')) as f:
         key_dict[t.lower()] = f.read().strip()
 
-Bot = Viktor(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'])
+Bot = Viktor(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'],
+             ss_key=key_dict['spreadsheet_key'], onboarding_key=key_dict['onboarding_key'], debug=True)
 # Include a means of halting duplicate requests from being handled
 #   until I can figure out a better async protocol
 message_events = []
