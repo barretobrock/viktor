@@ -14,7 +14,7 @@ for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN', 'ONBOARD
         key_dict[t.lower()] = f.read().strip()
 
 Bot = Viktor(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'],
-             ss_key=key_dict['spreadsheet_key'], onboarding_key=key_dict['onboarding_key'], debug=True)
+             ss_key=key_dict['spreadsheet_key'], onboarding_key=key_dict['onboarding_key'], debug=False)
 # Include a means of halting duplicate requests from being handled
 #   until I can figure out a better async protocol
 message_events = []
