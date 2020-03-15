@@ -248,6 +248,12 @@ class Viktor:
                 'cat': cat_useful,
                 'desc': 'Offers example usage of the given Estonian word',
                 'value': [self.prep_message_for_examples, 'message']
+            },
+            r'^lemma\s': {
+                'pattern': 'lemma <word-to-lookup>',
+                'cat': cat_useful,
+                'desc': 'Determines the lemma of the Estonian word',
+                'value': [self.prep_message_for_root, 'message']
             }
         }
 
@@ -738,12 +744,12 @@ class Viktor:
 
         # Make sure the word is a root if it's Estonian
         if target == 'en':
-            word = self.get_root(word)
+            processed_word = self.get_root(word)
 
-        if word is not None:
-            return self._get_translation(word, target)
+        if processed_word is not None:
+            return self._get_translation(processed_word, target)
         else:
-            return 'Translation not found.'
+            return f'Translation not found for `{word}`.'
 
     def _get_translation(self, word, target='en'):
         """Returns the English translation of the Estonian word"""
@@ -777,12 +783,12 @@ class Viktor:
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `et <word>` or `en <word>`
         word = re.sub(r'^ekss\s', '', message)
-        word = self.get_root(word)
+        processed_word = self.get_root(word)
 
-        if word is not None:
-            return self._get_examples(word, max_n=5)
+        if processed_word is not None:
+            return self._get_examples(processed_word, max_n=5)
         else:
-            return 'No examples found.'
+            return f'No examples found for `{word}`.'
 
     def _get_examples(self, word, max_n=5):
         """Returns some example sentences of the Estonian word"""
@@ -809,6 +815,19 @@ class Viktor:
                 return f'Examples for `{word}`:\n{examples}'
 
         return f'No example sentences found for `{word}`'
+
+    def prep_message_for_root(self, message):
+        """Takes in the raw message and prepares it for lookup"""
+        # Format should be like `lemma <word>`
+        word = re.sub(r'^lemma\s', '', message)
+
+        # Make sure the word is a root if it's Estonian
+        lemma = self.get_root(word)
+
+        if lemma is not None:
+            return f'Lemma for `{word}`: `{lemma}`'
+        else:
+            return f'Lemmatization not found for `{word}`.'
 
     @staticmethod
     def get_root(word):
