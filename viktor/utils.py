@@ -7,9 +7,11 @@ import pandas as pd
 import numpy as np
 from datetime import datetime as dt
 from random import randint
+import urllib.request as req
+import urllib.parse as parse
+from lxml import etree
 from slacktools import SlackTools, GSheetReader
 from ._version import get_versions
-
 
 
 class Viktor:
@@ -234,6 +236,18 @@ class Viktor:
                 'cat': cat_useful,
                 'desc': 'Shows all perks currently available at OKR',
                 'value': [self.show_all_perks]
+            },
+            r'^e[nt]\s': {
+                'pattern': 'et <word-to-translate>',
+                'cat': cat_useful,
+                'desc': 'Offers a translation of an Estonian word',
+                'value': [self.prep_message_for_translation, 'message']
+            },
+            r'^ekss\s': {
+                'pattern': 'ekss <word-to-lookup>',
+                'cat': cat_useful,
+                'desc': 'Offers example usage of the given Estonian word',
+                'value': [self.prep_message_for_examples, 'message']
             }
         }
 
@@ -704,6 +718,83 @@ class Viktor:
         """Converts message into letter emojis"""
         msg = message[len('quote me'):].strip()
         return self.st.build_phrase(msg)
+
+    # Language methods
+    # ====================================================
+    @staticmethod
+    def prep_for_xpath(url):
+        """Takes in a url and returns a tree that can be searched using xpath"""
+        content = req.urlopen(url)
+        parser = etree.HTMLParser()
+        tree = etree.parse(content, parser)
+        return tree
+
+    def prep_message_for_translation(self, message):
+        """Takes in the raw message and prepares it for lookup"""
+        # Format should be like `et <word>` or `en <word>`
+        word = re.sub(r'^e[nt]\s', '', message)
+        target = message[:2]
+        return self._get_translation(word, target)
+
+    def _get_translation(self, word, target='en'):
+        """Returns the English translation of the Estonian word"""
+        # Find the English translation of the word using EKI
+        eki_url = f'http://www.eki.ee/dict/ies/index.cgi?Q={parse.quote(word)}&F=V&C06={target}'
+        content = self.prep_for_xpath(eki_url)
+
+        results = content.xpath('//div[@class="tervikart"]')
+        result = []
+        for i in range(0, len(results)):
+            et_result = content.xpath(f'(//div[@class="tervikart"])[{i + 1}]/*/span[@lang="et"]')
+            en_result = content.xpath(f'(//div[@class="tervikart"])[{i + 1}]/*/span[@lang="en"]')
+            # Process text in elements
+            et_result = [''.join(x.itertext()) for x in et_result]
+            en_result = [''.join(x.itertext()) for x in en_result]
+            if target == 'en':
+                if word in et_result:
+                    result += en_result
+            else:
+                if word in en_result:
+                    result += et_result
+
+        if len(result) > 0:
+            # Make all entries lowercase and remove dupes
+            result = list(set(map(str.lower, result)))
+            return f"`{word}`: {', '.join(result)}"
+        else:
+            return f'No results found for `{word}` :frowning:'
+
+    def prep_message_for_examples(self, message):
+        """Takes in the raw message and prepares it for lookup"""
+        # Format should be like `et <word>` or `en <word>`
+        word = re.sub(r'^ekss\s', '', message)
+        return self._get_examples(word, max_n=5)
+
+    def _get_examples(self, word, max_n=5):
+        """Returns some example sentences of the Estonian word"""
+        # Find the English translation of the word using EKI
+        ekss_url = f'http://www.eki.ee/dict/ekss/index.cgi?Q={parse.quote(word)}&F=M'
+        content = self.prep_for_xpath(ekss_url)
+
+        results = content.xpath('//div[@class="tervikart"]')
+        exp_list = []
+        for i in range(0, len(results)):
+            result = content.xpath(f'(//div[@class="tervikart"])[{i + 1}]/*/span[@class="m leitud_id"]')
+            examples = content.xpath(f'(//div[@class="tervikart"])[{i + 1}]/*/span[@class="n"]')
+            # Process text in elements
+            result = [''.join(x.itertext()) for x in result]
+            examples = [''.join(x.itertext()) for x in examples]
+            if word in result:
+                re.split('[?\.!]', ''.join(examples))
+                exp_list += re.split('[?\.!]', ''.join(examples))
+                # Strip of leading / tailing whitespace
+                exp_list = [x.strip() for x in exp_list]
+                if len(exp_list) > max_n:
+                    exp_list = [exp_list[x] for x in np.random.choice(len(exp_list), max_n, False).tolist()]
+                examples = '\n'.join([f'`{x}`' for x in exp_list])
+                return f'Examples for `{word}`:\n{examples}'
+
+        return f'No example sentences found for `{word}`'
 
     # OKR Roles / Perks
     # ====================================================
