@@ -221,6 +221,24 @@ class Viktor:
                 'cat': cat_useful,
                 'desc': 'Prints out all the material needed to get a new OKR employee up to speed!',
                 'value': [self.onboarding_docs],
+            },
+            r'^update level': {
+                'pattern': 'update level -u <user>',
+                'cat': cat_useful,
+                'desc': 'Accesses an employee\'s LevelUp registry and increments their level',
+                'value': [self.update_user_level, 'channel', 'user', 'message']
+            },
+            r'^show (my )?perk[s]?': {
+                'pattern': 'show [my] perk(s)',
+                'cat': cat_useful,
+                'desc': 'Shows the perks an employee has access to at their current level',
+                'value': [self.show_my_perks, 'user']
+            },
+            r'^show all perks': {
+                'pattern': 'show all perks',
+                'cat': cat_useful,
+                'desc': 'Shows all perks currently available at OKR',
+                'value': [self.show_all_perks]
             }
         }
 
@@ -317,6 +335,57 @@ class Viktor:
             Don't know who they are? Well, figure it out!
         """
         return docs
+
+    def show_all_perks(self):
+        """Displays all the perks"""
+        perks_df = self.gs_dict['okr_perks']
+        perks_df = perks_df.sort_values('level')
+        perks = ''
+        for level in perks_df['level'].unique().tolist():
+            perk_list = '\n\t\t - '.join(perks_df.loc[perks_df['level'] == level, 'perk'].tolist())
+            perks += f'`lvl {level}`: \n\t\t - {perk_list}\n'
+        return f'*OKR perks*:\n{perks}'
+
+    def show_my_perks(self, user):
+        """Lists the perks granted at the user's current level"""
+        # Get the user's level
+        users_df = self.gs_dict['okr_roles'].copy()
+        users_df = users_df[users_df['user'] == user]
+        if not users_df.empty:
+            level = users_df['level'].values[0]
+            perks_df = self.gs_dict['okr_perks'].copy()
+            perks_df = perks_df[perks_df['level'] <= level]
+            # Sort by perks level
+            perks_df = perks_df.sort_values('level', ascending=True)
+            perks = ''
+            for i, row in perks_df.iterrows():
+                perks += f'`lvl {row["level"]}`: {row["perk"]}\n'
+            return f'WOW <@{user}>! You\'re at level `{level}`!!\n' \
+                   f'You have access to the following _amazing_ perks:\n\n{perks}'
+        else:
+            return 'User not found in OKR roles sheet :frowning:'
+
+    def update_user_level(self, channel, user, message):
+        """Increment the user's level"""
+        if user not in self.approved_users:
+            return 'LOL sorry, levelups are CEO-approved only'
+
+        content = message[len('update level'):].strip()
+        if '-u' in content:
+            # Updating role of other user
+            # Extract user
+            user = content.split()[1].replace('<@', '').replace('>', '').upper()
+            if user == 'UPLAE3N67':
+                # Some people should stay permanently at lvl 1
+                return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
+
+            level_before = self.roles.loc[self.roles['user'] == user, 'level'].values[0]
+            self.roles.loc[self.roles['user'] == user, 'level'] += 1
+            # Save roles to Gsheet
+            self.write_roles()
+            self.st.send_message(channel, f'Level for <@{user}> updated to `{level_before + 1}`.')
+        else:
+            return 'No user tagged for update.'
 
     def get_channel_stats(self, channel):
         """Collects posting stats for a given channel"""
@@ -621,8 +690,8 @@ class Viktor:
     def write_roles(self):
         """Writes roles to GSheeets"""
         user_df = self.collect_roleplayers()
-        self.roles = self.roles[['user', 'role']].merge(user_df, on='user', how='left')
-        self.roles = self.roles[['user', 'name', 'role']]
+        self.roles = self.roles[['user', 'level', 'role']].merge(user_df, on='user', how='left')
+        self.roles = self.roles[['user', 'name', 'level', 'role']]
 
         self.st.write_sheet(self.viktor_sheet, 'okr_roles', self.roles)
 
@@ -647,12 +716,13 @@ class Viktor:
             roles_output = ['*OKR Roles (as of last reorg)*:', '=' * 10]
             # Iterate through roles, print them out
             for i, row in self.roles.iterrows():
-                roles_output.append(f'`{row["name"]}`: {row["role"]}')
+                roles_output.append(f'`{row["name"]}`: Level `{row["level"]}`\n\t\t{row["role"]}')
         else:
             # Printing role for an individual user
             role_row = self.roles[self.roles['user'] == user]
             if not role_row.empty:
-                roles_output = [f'`{role_row["name"].values[0]}`: {role_row["role"].values[0]}']
+                for i, row in role_row.iterrows():
+                    roles_output = [f'`{row["name"]}`: Level `{row["level"]}` \n\t\t{row["role"]}']
             else:
                 roles_output = ['No roles for you yet. Add them with the `update dooties` command.']
 
