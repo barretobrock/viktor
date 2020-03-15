@@ -43,6 +43,6 @@ announce_section "Pulling update from git repo"
 # Then update the python package locally
 announce_section "Beginning update of ${REPO}"
 # TODO check if installed, then upgrade if so
-pip3 install ${GIT_URL} --upgrade
+python3 -m pip install ${GIT_URL} --upgrade ${NODEPS_FLAG}
 
 announce_section "Process completed"
