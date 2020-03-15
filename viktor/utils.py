@@ -57,6 +57,8 @@ class Viktor:
         cat_basic = 'basic'
         cat_useful = 'useful'
         cat_notsouseful = 'not so useful'
+        cat_org = 'org'
+        cat_lang = 'language'
 
         self.cmd_dict = {
             r'^help': {
@@ -109,20 +111,20 @@ class Viktor:
             },
             r'^show (roles|doo[td]ies)$': {
                 'pattern': 'show (roles|doo[td]ies)',
-                'cat': cat_useful,
+                'cat': cat_org,
                 'desc': 'Shows current roles of all the wonderful workers of OKR',
                 'value': [self.build_role_txt, 'channel'],
             },
             r'^update doo[td]ies': {
                 'pattern': 'update dooties [-u @user]',
-                'cat': cat_useful,
+                'cat': cat_org,
                 'desc': 'Updates OKR roles of user (or other user). Useful during a quick reorg. '
                         '\n\t\t\t_NOTE: You only have to tag a user if it\'s not you._',
                 'value': [self.update_roles, 'user', 'channel', 'raw_message'],
             },
             r'^show my (role|doo[td]ie)$': {
                 'pattern': 'show my (role|doo[td]ie)',
-                'cat': cat_useful,
+                'cat': cat_org,
                 'desc': 'Shows your current role as of the last reorg.',
                 'value': [self.build_role_txt, 'channel', 'user'],
             },
@@ -215,43 +217,43 @@ class Viktor:
             },
             r'^onbo[a]?r[d]?ing$': {
                 'pattern': '(onboarding|onboring)',
-                'cat': cat_useful,
+                'cat': cat_org,
                 'desc': 'Prints out all the material needed to get a new OKR employee up to speed!',
                 'value': [self.onboarding_docs],
             },
             r'^update level': {
                 'pattern': 'update level -u <user>',
-                'cat': cat_useful,
+                'cat': cat_org,
                 'desc': 'Accesses an employee\'s LevelUp registry and increments their level',
                 'value': [self.update_user_level, 'channel', 'user', 'message']
             },
             r'^show (my )?perk[s]?': {
                 'pattern': 'show [my] perk(s)',
-                'cat': cat_useful,
+                'cat': cat_org,
                 'desc': 'Shows the perks an employee has access to at their current level',
                 'value': [self.show_my_perks, 'user']
             },
             r'^show all perks': {
                 'pattern': 'show all perks',
-                'cat': cat_useful,
+                'cat': cat_org,
                 'desc': 'Shows all perks currently available at OKR',
                 'value': [self.show_all_perks]
             },
             r'^e[nt]\s': {
-                'pattern': 'et <word-to-translate>',
-                'cat': cat_useful,
-                'desc': 'Offers a translation of an Estonian word',
+                'pattern': '(et|en) <word-to-translate>',
+                'cat': cat_lang,
+                'desc': 'Offers a translation of an Estonian word into English or vice-versa',
                 'value': [self.prep_message_for_translation, 'message']
             },
             r'^ekss\s': {
                 'pattern': 'ekss <word-to-lookup>',
-                'cat': cat_useful,
+                'cat': cat_lang,
                 'desc': 'Offers example usage of the given Estonian word',
                 'value': [self.prep_message_for_examples, 'message']
             },
             r'^lemma\s': {
                 'pattern': 'lemma <word-to-lookup>',
-                'cat': cat_useful,
+                'cat': cat_lang,
                 'desc': 'Determines the lemma of the Estonian word',
                 'value': [self.prep_message_for_root, 'message']
             }
@@ -263,11 +265,14 @@ class Viktor:
 
     def build_help_txt(self):
         """Builds Viktor's description of functions into a giant wall of text"""
-        intro_txt = "Здравствуйте! I'm Viktor (V for short). Here's what I can do:"
+        intro_txt = "Здравствуйте! I'm Viktor (V for short). \nI can do stuff for you as long as " \
+                    "you call my attention first with `viktor` or `v!`\n Here's what I can do:"
         help_dict = {
             'basic': [],
             'useful': [],
             'not so useful': [],
+            'org': [],
+            'language': [],
         }
         for k, v in self.cmd_dict.items():
             if 'pattern' not in v.keys():
@@ -742,9 +747,11 @@ class Viktor:
         word = re.sub(r'^e[nt]\s', '', message)
         target = message[:2]
 
-        # Make sure the word is a root if it's Estonian
         if target == 'en':
+            # Make sure the word is a root if it's Estonian
             processed_word = self.get_root(word)
+        else:
+            processed_word = word
 
         if processed_word is not None:
             return self._get_translation(processed_word, target)
