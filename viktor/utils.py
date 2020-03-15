@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime as dt
 from random import randint
-import urllib.request as req
+from io import StringIO
 import urllib.parse as parse
 from lxml import etree
 from slacktools import SlackTools, GSheetReader
@@ -724,9 +724,10 @@ class Viktor:
     @staticmethod
     def prep_for_xpath(url):
         """Takes in a url and returns a tree that can be searched using xpath"""
-        content = req.urlopen(url)
+        page = requests.get(url)
+        html = page.content.decode('utf-8')
         parser = etree.HTMLParser()
-        tree = etree.parse(content, parser)
+        tree = etree.parse(StringIO(html), parser=parser)
         return tree
 
     def prep_message_for_translation(self, message):
@@ -734,7 +735,15 @@ class Viktor:
         # Format should be like `et <word>` or `en <word>`
         word = re.sub(r'^e[nt]\s', '', message)
         target = message[:2]
-        return self._get_translation(word, target)
+
+        # Make sure the word is a root if it's Estonian
+        if target == 'en':
+            word = self.get_root(word)
+
+        if word is not None:
+            return self._get_translation(word, target)
+        else:
+            return 'Translation not found.'
 
     def _get_translation(self, word, target='en'):
         """Returns the English translation of the Estonian word"""
@@ -768,7 +777,12 @@ class Viktor:
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `et <word>` or `en <word>`
         word = re.sub(r'^ekss\s', '', message)
-        return self._get_examples(word, max_n=5)
+        word = self.get_root(word)
+
+        if word is not None:
+            return self._get_examples(word, max_n=5)
+        else:
+            return 'No examples found.'
 
     def _get_examples(self, word, max_n=5):
         """Returns some example sentences of the Estonian word"""
@@ -785,16 +799,31 @@ class Viktor:
             result = [''.join(x.itertext()) for x in result]
             examples = [''.join(x.itertext()) for x in examples]
             if word in result:
-                re.split('[?\.!]', ''.join(examples))
-                exp_list += re.split('[?\.!]', ''.join(examples))
+                re.split(r'[?\.!]', ''.join(examples))
+                exp_list += re.split(r'[?\.!]', ''.join(examples))
                 # Strip of leading / tailing whitespace
-                exp_list = [x.strip() for x in exp_list]
+                exp_list = [x.strip() for x in exp_list if x.strip() != '']
                 if len(exp_list) > max_n:
                     exp_list = [exp_list[x] for x in np.random.choice(len(exp_list), max_n, False).tolist()]
                 examples = '\n'.join([f'`{x}`' for x in exp_list])
                 return f'Examples for `{word}`:\n{examples}'
 
         return f'No example sentences found for `{word}`'
+
+    @staticmethod
+    def get_root(word):
+        """Retrieves the root word (nom. sing.) from Lemmatiseerija"""
+        # First, look up the word's root with the lemmatiseerija
+        lemma_url = f'https://www.filosoft.ee/lemma_et/lemma.cgi?word={parse.quote(word)}'
+        content = requests.get(lemma_url).content
+        content = str(content, 'utf-8')
+        # Use regex to find the word/s
+        lemma_regex = re.compile(r'<strong>.*na\slemma[d]?\son:<\/strong><br>(\w+)<br>')
+        match = lemma_regex.search(content)
+        word = None
+        if match is not None:
+            word = match.group(1)
+        return word
 
     # OKR Roles / Perks
     # ====================================================
