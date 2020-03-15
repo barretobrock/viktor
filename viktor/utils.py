@@ -10,11 +10,6 @@ from random import randint
 from slacktools import SlackTools, GSheetReader
 from ._version import get_versions
 
-help_txt = """
-*Useful commands:*
-    - `onboarding`: Prints out all the material needed to get a new OKR employee up to speed!
-*Not-so-useful Commands:*
-"""
 
 
 class Viktor:
@@ -266,6 +261,8 @@ class Viktor:
 
         self.help_txt = "{}\n{}".format(intro_txt, '\n'.join(command_frags))
 
+    # Packet handling
+    # ====================================================
     @staticmethod
     def call_command(cmd, *args, **kwargs):
         """
@@ -315,83 +312,20 @@ class Viktor:
                 pass
             self.st.send_message(channel, response)
 
-    @staticmethod
-    def sarcastic_response():
-        """Sends back a sarcastic response when user is not allowed to use the action requested"""
-        sarcastic_reponses = [
-            ''.join([':ah-ah-ah:'] * randint(0, 50)),
-            'Lol <@{user}>... here ya go bruv :pick:',
-            'Nah boo, we good.',
-            'Yeah, how about you go on ahead and, you know, do that yourself.'
-            ':bye_felicia:'
-        ]
-
-        return sarcastic_reponses[randint(0, len(sarcastic_reponses) - 1)]
-
-    def onboarding_docs(self):
-        """Returns links to everything needed to bring a new OKR employee up to speed"""
-        docs = f"""
-        Welcome to OKR! We're glad to have you on board! 
-        Check out these links below to get familiar with OKR and the industry we support!
-        
-        Onboarding Doc: {self.onboarding_link}
-        Viktor's GSheet: {self.viktor_sheet_link}
-
-        For any questions, reach out to the CEO or our Head of Recruiting. 
-            Don't know who they are? Well, figure it out!
-        """
-        return docs
-
-    def show_all_perks(self):
-        """Displays all the perks"""
-        perks_df = self.gs_dict['okr_perks']
-        perks_df = perks_df.sort_values('level')
-        perks = ''
-        for level in perks_df['level'].unique().tolist():
-            perk_list = '\n\t\t - '.join(perks_df.loc[perks_df['level'] == level, 'perk'].tolist())
-            perks += f'`lvl {level}`: \n\t\t - {perk_list}\n'
-        return f'*OKR perks*:\n{perks}'
-
-    def show_my_perks(self, user):
-        """Lists the perks granted at the user's current level"""
-        # Get the user's level
-        users_df = self.gs_dict['okr_roles'].copy()
-        users_df = users_df[users_df['user'] == user]
-        if not users_df.empty:
-            level = users_df['level'].values[0]
-            perks_df = self.gs_dict['okr_perks'].copy()
-            perks_df = perks_df[perks_df['level'] <= level]
-            # Sort by perks level
-            perks_df = perks_df.sort_values('level', ascending=True)
-            perks = ''
-            for i, row in perks_df.iterrows():
-                perks += f'`lvl {row["level"]}`: {row["perk"]}\n'
-            return f'WOW <@{user}>! You\'re at level `{level}`!!\n' \
-                   f'You have access to the following _amazing_ perks:\n\n{perks}'
-        else:
-            return 'User not found in OKR roles sheet :frowning:'
-
-    def update_user_level(self, channel, user, message):
-        """Increment the user's level"""
-        if user not in self.approved_users:
-            return 'LOL sorry, levelups are CEO-approved only'
-
-        content = message[len('update level'):].strip()
-        if '-u' in content:
-            # Updating role of other user
-            # Extract user
-            user = content.split()[1].replace('<@', '').replace('>', '').upper()
-            if user == 'UPLAE3N67':
-                # Some people should stay permanently at lvl 1
-                return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
-
-            level_before = self.roles.loc[self.roles['user'] == user, 'level'].values[0]
-            self.roles.loc[self.roles['user'] == user, 'level'] += 1
-            # Save roles to Gsheet
-            self.write_roles()
-            self.st.send_message(channel, f'Level for <@{user}> updated to `{level_before + 1}`.')
-        else:
-            return 'No user tagged for update.'
+    # General support methods
+    # ====================================================
+    def get_prev_msg_in_channel(self, channel, timestamp):
+        """Gets the previous message from the channel"""
+        resp = self.bot.conversations_history(
+            channel=channel,
+            latest=timestamp,
+            limit=10)
+        if not resp['ok']:
+            return None
+        if 'messages' in resp.data.keys():
+            msgs = resp['messages']
+            return msgs[0]['text']
+        return None
 
     def get_channel_stats(self, channel):
         """Collects posting stats for a given channel"""
@@ -446,18 +380,26 @@ class Viktor:
                    '```{}```'.format(len(msgs), self.st.df_to_slack_table(res_df))
         return response
 
-    def get_prev_msg_in_channel(self, channel, timestamp):
-        """Gets the previous message from the channel"""
-        resp = self.bot.conversations_history(
-            channel=channel,
-            latest=timestamp,
-            limit=10)
-        if not resp['ok']:
-            return None
-        if 'messages' in resp.data.keys():
-            msgs = resp['messages']
-            return msgs[0]['text']
-        return None
+    def message_grp(self, message):
+        """Wrapper to send message to whole channel"""
+        self.st.send_message(self.alerts_channel, message)
+
+    def get_user_by_id(self, user_id, user_list):
+        """Returns a dictionary of player info that has a matching 'id' value in a list of player dicts"""
+        user_idx = self.get_user_index_by_id(user_id, user_list)
+        return user_list[user_idx]
+
+    @staticmethod
+    def get_user_index_by_id(user_id, user_list):
+        """Returns the index of a player in a list of players that has a matching 'id' value"""
+        return user_list.index([x for x in user_list if x['id'] == user_id][0])
+
+    def _get_emojis(self):
+        """Collect emojis in workspace, remove those that are parts of a larger emoji"""
+        emojis = list(self.st.get_emojis().keys())
+        regex = re.compile('.*[0-9][-_][0-9].*')
+        matches = list(filter(regex.match, emojis))
+        return [x for x in emojis if x not in matches]
 
     def get_emojis_like(self, message, max_res=500):
         """Gets emojis matching in the system that match a given regex pattern"""
@@ -495,6 +437,85 @@ class Viktor:
                 sheet.title: gs.get_sheet(sheet.title)
             })
 
+    def refresh_sheets(self):
+        """Refreshes Viktor's Google Sheet"""
+        self._read_in_sheets()
+        return 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
+
+    @staticmethod
+    def _grab_flag(msg_split, default_flag):
+        """Collects flag from message. If no flag, uses a default"""
+        # Check if flag is at the end of the msg
+        flag = msg_split[-1]
+        if '-' in flag:
+            flag = flag.replace('-', '')
+            # Skip the last part of the message, as that's the flag
+            target = ' '.join(msg_split[1:-1])
+        else:
+            flag = default_flag
+            # Get the rest of the message
+            target = ' '.join(msg_split[1:])
+        return flag, target
+
+    @staticmethod
+    def _build_flag_dict(col_list):
+        """Builds a dictionary of the columns for a particular sheet that
+            contains several ordered columns grouped under a central theme"""
+        # Parse the columns into flags and order
+        flag_dict = {}
+        for col in col_list:
+            if '_' in col:
+                k, v = col.split('_')
+                if k in flag_dict.keys():
+                    flag_dict[k].append(col)
+                else:
+                    flag_dict[k] = [col]
+        return flag_dict
+
+    # Basic / Static standalone methods
+    # ====================================================
+    @staticmethod
+    def sarcastic_response():
+        """Sends back a sarcastic response when user is not allowed to use the action requested"""
+        sarcastic_reponses = [
+            ''.join([':ah-ah-ah:'] * randint(0, 50)),
+            'Lol <@{user}>... here ya go bruv :pick:',
+            'Nah boo, we good.',
+            'Yeah, how about you go on ahead and, you know, do that yourself.'
+            ':bye_felicia:'
+        ]
+
+        return sarcastic_reponses[randint(0, len(sarcastic_reponses) - 1)]
+
+    @staticmethod
+    def giggle():
+        """Laughs, uncontrollably at times"""
+        # Count the 'no's
+        laugh_cycles = randint(1, 500)
+        response = f'ti{"hi" * laugh_cycles}!'
+        return response
+
+    @staticmethod
+    def overly_polite(message):
+        """Responds to 'no, thank you' with an extra 'no' """
+        # Count the 'no's
+        no_cnt = message.count('no')
+        no_cnt += 1
+        response = '{}, thank you!'.format(', '.join(['no'] * no_cnt)).capitalize()
+        return response
+
+    @staticmethod
+    def access_something():
+        """Return random number of ah-ah-ah emojis (Jurassic Park movie reference)"""
+        return ''.join([':ah-ah-ah:'] * randint(5, 50))
+
+    @staticmethod
+    def get_time():
+        """Gets the server time"""
+        return f'The server time is `{dt.today():%F %T}`'
+
+    # Misc. methods
+    # ====================================================
     def sh_response(self):
         """Responds to SHs"""
         resp_df = self.gs_dict['responses']
@@ -545,36 +566,6 @@ class Viktor:
 
         return ':robot-face: Here are my guesses for *{}*!\n {}'.format(acronym.upper(),
                                                                         '\n_OR_\n'.join(guesses))
-
-    @staticmethod
-    def _grab_flag(msg_split, default_flag):
-        """Collects flag from message. If no flag, uses a default"""
-        # Check if flag is at the end of the msg
-        flag = msg_split[-1]
-        if '-' in flag:
-            flag = flag.replace('-', '')
-            # Skip the last part of the message, as that's the flag
-            target = ' '.join(msg_split[1:-1])
-        else:
-            flag = default_flag
-            # Get the rest of the message
-            target = ' '.join(msg_split[1:])
-        return flag, target
-
-    @staticmethod
-    def _build_flag_dict(col_list):
-        """Builds a dictionary of the columns for a particular sheet that
-            contains several ordered columns grouped under a central theme"""
-        # Parse the columns into flags and order
-        flag_dict = {}
-        for col in col_list:
-            if '_' in col:
-                k, v = col.split('_')
-                if k in flag_dict.keys():
-                    flag_dict[k].append(col)
-                else:
-                    flag_dict[k] = [col]
-        return flag_dict
 
     def insult(self, message):
         """Insults the user at their request"""
@@ -642,23 +633,6 @@ class Viktor:
         else:
             return "Dear {}, {} <@{}>".format(target, ' '.join(compliments), user)
 
-    @staticmethod
-    def giggle():
-        """Laughs, uncontrollably at times"""
-        # Count the 'no's
-        laugh_cycles = randint(1, 500)
-        response = f'ti{"hi" * laugh_cycles}!'
-        return response
-
-    @staticmethod
-    def overly_polite(message):
-        """Responds to 'no, thank you' with an extra 'no' """
-        # Count the 'no's
-        no_cnt = message.count('no')
-        no_cnt += 1
-        response = '{}, thank you!'.format(', '.join(['no'] * no_cnt)).capitalize()
-        return response
-
     def inspirational(self, channel):
         """Sends a random inspirational message"""
         resp = requests.get('http://inspirobot.me/api?generate=true')
@@ -671,9 +645,132 @@ class Viktor:
                     f.write(img.content)
                 self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
 
-    def message_grp(self, message):
-        """Wrapper to send message to whole channel"""
-        self.st.send_message(self.alerts_channel, message)
+    def uwu_that(self, channel, ts):
+        """Retrieves previous message and converts to UwU"""
+        return self.uwu(self.get_prev_msg_in_channel(channel, ts))
+
+    def uwu(self, msg):
+        """uwu-fy a message"""
+        default_lvl = 2
+
+        if '-l' in msg.split():
+            level = msg.split()[msg.split().index('-l') + 1]
+            level = int(level) if level.isnumeric() else default_lvl
+            text = ' '.join(msg.split()[msg.split().index('-l') + 2:])
+        else:
+            level = default_lvl
+            text = msg.replace('uwu', '').strip()
+
+        uwu_df = self.gs_dict['uwu_graphics']
+        chars = uwu_df['uwu'].tolist()
+
+        if level >= 1:
+            # Level 1: Letter replacement
+            text = text.translate(str.maketrans('rRlL', 'wWwW'))
+
+        if level >= 2:
+            # Level 2: Placement of 'uwu' when certain patterns occur
+            pattern_whitelist = {
+                'uwu': {
+                    'start': 'u',
+                    'anywhere': ['nu', 'ou', 'du', 'un', 'bu'],
+                },
+                'owo': {
+                    'start': 'o',
+                    'anywhere': ['ow', 'bo', 'do', 'on'],
+                }
+            }
+            # Rebuild the phrase letter by letter
+            phrase = []
+            for word in text.split(' '):
+                for pattern, pattern_dict in pattern_whitelist.items():
+                    if word.startswith(pattern_dict['start']):
+                        word = word.replace(pattern_dict['start'], pattern)
+                    else:
+                        for fragment in pattern_dict['anywhere']:
+                            if fragment in word:
+                                word = word.replace(pattern_dict['start'], pattern)
+                phrase.append(word)
+            text = ' '.join(phrase)
+
+            # Last step, insert random characters
+            prefix_emoji = chars[np.random.choice(len(chars), 1)[0]]
+            suffix_emoji = chars[np.random.choice(len(chars), 1)[0]]
+            text = f'{prefix_emoji} {text} {suffix_emoji}'
+
+        return text.replace('`', ' ')
+
+    def quote_me(self, message):
+        """Converts message into letter emojis"""
+        msg = message[len('quote me'):].strip()
+        return self.st.build_phrase(msg)
+
+    # OKR Roles / Perks
+    # ====================================================
+    def onboarding_docs(self):
+        """Returns links to everything needed to bring a new OKR employee up to speed"""
+        docs = f"""
+        Welcome to OKR! We're glad to have you on board! 
+        Check out these links below to get familiar with OKR and the industry we support!
+
+        Onboarding Doc: {self.onboarding_link}
+        Viktor's GSheet: {self.viktor_sheet_link}
+
+        For any questions, reach out to the CEO or our Head of Recruiting. 
+            Don't know who they are? Well, figure it out!
+        """
+        return docs
+
+    def show_all_perks(self):
+        """Displays all the perks"""
+        perks_df = self.gs_dict['okr_perks']
+        perks_df = perks_df.sort_values('level')
+        perks = ''
+        for level in perks_df['level'].unique().tolist():
+            perk_list = '\n\t\t - '.join(perks_df.loc[perks_df['level'] == level, 'perk'].tolist())
+            perks += f'`lvl {level}`: \n\t\t - {perk_list}\n'
+        return f'*OKR perks*:\n{perks}'
+
+    def show_my_perks(self, user):
+        """Lists the perks granted at the user's current level"""
+        # Get the user's level
+        users_df = self.gs_dict['okr_roles'].copy()
+        users_df = users_df[users_df['user'] == user]
+        if not users_df.empty:
+            level = users_df['level'].values[0]
+            perks_df = self.gs_dict['okr_perks'].copy()
+            perks_df = perks_df[perks_df['level'] <= level]
+            # Sort by perks level
+            perks_df = perks_df.sort_values('level', ascending=True)
+            perks = ''
+            for i, row in perks_df.iterrows():
+                perks += f'`lvl {row["level"]}`: {row["perk"]}\n'
+            return f'WOW <@{user}>! You\'re at level `{level}`!!\n' \
+                   f'You have access to the following _amazing_ perks:\n\n{perks}'
+        else:
+            return 'User not found in OKR roles sheet :frowning:'
+
+    def update_user_level(self, channel, user, message):
+        """Increment the user's level"""
+        if user not in self.approved_users:
+            return 'LOL sorry, levelups are CEO-approved only'
+
+        content = message[len('update level'):].strip()
+        if '-u' in content:
+            # Updating role of other user
+            # Extract user
+            user = content.split()[1].replace('<@', '').replace('>', '').upper()
+            if user == 'UPLAE3N67':
+                # Some people should stay permanently at lvl 1
+                return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
+
+            level_before = self.roles.loc[self.roles['user'] == user, 'level'].values[0]
+            self.roles.loc[self.roles['user'] == user, 'level'] += 1
+            # Save roles to Gsheet
+            self.write_roles()
+            self.st.send_message(channel, f'Level for <@{user}> updated to `{level_before + 1}`.')
+        else:
+            return 'No user tagged for update.'
 
     def read_roles(self):
         """Reads in JSON of roles"""
@@ -751,95 +848,3 @@ class Viktor:
         else:
             role_txt = '\n'.join(roles_output)
         self.st.send_message(channel, role_txt)
-
-    def get_user_by_id(self, user_id, user_list):
-        """Returns a dictionary of player info that has a matching 'id' value in a list of player dicts"""
-        user_idx = self.get_user_index_by_id(user_id, user_list)
-        return user_list[user_idx]
-
-    @staticmethod
-    def get_user_index_by_id(user_id, user_list):
-        """Returns the index of a player in a list of players that has a matching 'id' value"""
-        return user_list.index([x for x in user_list if x['id'] == user_id][0])
-
-    def _get_emojis(self):
-        """Collect emojis in workspace, remove those that are parts of a larger emoji"""
-        emojis = list(self.st.get_emojis().keys())
-        regex = re.compile('.*[0-9][-_][0-9].*')
-        matches = list(filter(regex.match, emojis))
-        return [x for x in emojis if x not in matches]
-
-    def uwu_that(self, channel, ts):
-        """Retrieves previous message and converts to UwU"""
-        return self.uwu(self.get_prev_msg_in_channel(channel, ts))
-
-    def uwu(self, msg):
-        """uwu-fy a message"""
-        default_lvl = 2
-
-        if '-l' in msg.split():
-            level = msg.split()[msg.split().index('-l') + 1]
-            level = int(level) if level.isnumeric() else default_lvl
-            text = ' '.join(msg.split()[msg.split().index('-l') + 2:])
-        else:
-            level = default_lvl
-            text = msg.replace('uwu', '').strip()
-
-        uwu_df = self.gs_dict['uwu_graphics']
-        chars = uwu_df['uwu'].tolist()
-
-        if level >= 1:
-            # Level 1: Letter replacement
-            text = text.translate(str.maketrans('rRlL', 'wWwW'))
-
-        if level >= 2:
-            # Level 2: Placement of 'uwu' when certain patterns occur
-            pattern_whitelist = {
-                'uwu': {
-                    'start': 'u',
-                    'anywhere': ['nu', 'ou', 'du', 'un', 'bu'],
-                },
-                'owo': {
-                    'start': 'o',
-                    'anywhere': ['ow', 'bo', 'do', 'on'],
-                }
-            }
-            # Rebuild the phrase letter by letter
-            phrase = []
-            for word in text.split(' '):
-                for pattern, pattern_dict in pattern_whitelist.items():
-                    if word.startswith(pattern_dict['start']):
-                        word = word.replace(pattern_dict['start'], pattern)
-                    else:
-                        for fragment in pattern_dict['anywhere']:
-                            if fragment in word:
-                                word = word.replace(pattern_dict['start'], pattern)
-                phrase.append(word)
-            text = ' '.join(phrase)
-
-            # Last step, insert random characters
-            prefix_emoji = chars[np.random.choice(len(chars), 1)[0]]
-            suffix_emoji = chars[np.random.choice(len(chars), 1)[0]]
-            text = f'{prefix_emoji} {text} {suffix_emoji}'
-
-        return text.replace('`', ' ')
-
-    def quote_me(self, message):
-        """Converts message into letter emojis"""
-        msg = message[len('quote me'):].strip()
-        return self.st.build_phrase(msg)
-
-    def refresh_sheets(self):
-        """Refreshes Viktor's Google Sheet"""
-        self._read_in_sheets()
-        return 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
-
-    @staticmethod
-    def access_something():
-        """Return random number of ah-ah-ah emojis (Jurassic Park movie reference)"""
-        return ''.join([':ah-ah-ah:'] * randint(5, 50))
-
-    @staticmethod
-    def get_time():
-        """Gets the server time"""
-        return f'The server time is `{dt.today():%F %T}`'
