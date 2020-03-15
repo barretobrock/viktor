@@ -307,7 +307,13 @@ class Viktor:
                        f"Use {' or '.join([f'`{x} help`' for x in self.triggers])} to get a list of my commands."
 
         if response is not None:
-            self.st.send_message(channel, response.format(**event_dict))
+            try:
+                response = response.format(**event_dict)
+            except KeyError:
+                # Response likely has some curly braces in it that disrupt str.format().
+                # Pass string without formatting
+                pass
+            self.st.send_message(channel, response)
 
     @staticmethod
     def sarcastic_response():
@@ -416,7 +422,7 @@ class Viktor:
         res_df = res_df.reset_index()
         res_df = res_df.rename(columns={'index': 'user'})
         # Get list of users based on the ids we've got
-        users = self.st.get_users_info(res_df['user'].tolist())
+        users = self.st.get_users_info(res_df['user'].tolist(), throw_exception=False)
         user_names = []
         for user in users:
             uid = user['id']
@@ -429,8 +435,9 @@ class Viktor:
                 name = user['real_name']
             user_names.append({'id': uid, 'display_name': name})
 
-        user_names_df = pd.DataFrame(user_names)
-        res_df = res_df.merge(user_names_df, left_on='user', right_on='id', how='left').drop(['user', 'id'], axis=1)
+        user_names_df = pd.DataFrame(user_names).drop_duplicates()
+        res_df = res_df.merge(user_names_df, left_on='user', right_on='id', how='left')\
+            .drop(['user', 'id'], axis=1).fillna('Unknown User')
         res_df = res_df[['display_name', 'total_messages', 'avg_msg_len']]
         res_df['total_messages'] = res_df['total_messages'].astype(int)
         res_df['avg_msg_len'] = res_df['avg_msg_len'].round(1)
