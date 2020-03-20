@@ -256,6 +256,12 @@ class Viktor:
                 'cat': cat_lang,
                 'desc': 'Determines the lemma of the Estonian word',
                 'value': [self.prep_message_for_root, 'message']
+            },
+            r'^wfh(time|\s?epoch)': {
+                'pattern': 'wfh(time| epoch)',
+                'cat': cat_useful,
+                'desc': 'Prints the current WFH epoch time',
+                'value': [self.wfh_epoch]
             }
         }
 
@@ -266,7 +272,6 @@ class Viktor:
     def build_help_txt(self, **kwargs):
         """Builds Viktor's description of functions into a giant wall of text"""
 
-        match_pattern = kwargs.pop('match_pattern', None)
         intro_txt = "Здравствуйте! I'm Viktor (V for short). \nI can do stuff for you as long as " \
                     "you call my attention first with `viktor` or `v!`\n Here's what I can do:"
         help_dict = {
@@ -356,7 +361,7 @@ class Viktor:
                 is_matched = True
                 break
         if message != '' and not is_matched:
-            if np.random.choice(2, 1)[0] == 1:
+            if randint(0, 1) == 1:
                 response = f'LOL yea. :Q:`{message}`:Q: - I\'ll get right on that, bud...'
             else:
                 response = f"I didn\'t understand this: `{message}`\n " \
@@ -463,11 +468,16 @@ class Viktor:
     def get_emojis_like(self, message, max_res=500, **kwargs):
         """Gets emojis matching in the system that match a given regex pattern"""
 
-        # Parse the regex from the message
-        ptrn = re.search(r'(?<=emojis like ).*', message)
-        if ptrn.group(0) != '':
+        # Parse out the initial command
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            ptrn = re.sub(match_pattern, message, '').strip()
+        else:
+            return 'Message didn\'t match expected syntax.'
+
+        if ptrn != '':
             # We've got a pattern to use
-            pattern = re.compile(ptrn.group(0))
+            pattern = re.compile(ptrn)
             emojis = self.st.get_emojis()
             matches = [k for k, v in emojis.items() if pattern.match(k)]
             len_match = len(matches)
@@ -476,7 +486,7 @@ class Viktor:
                 #   let's just put all the emojis together into one string
                 response = ''.join([':{}:'.format(x) for x in matches[:max_res]])
             else:
-                response = 'No results for pattern `{}`'.format(ptrn.group(0))
+                response = 'No results for pattern `{}` :frowning:'.format(ptrn)
 
             if len_match >= max_res:
                 # Append to the emoji_str that it was truncated
@@ -501,20 +511,20 @@ class Viktor:
         self._read_in_sheets()
         return 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
 
-    # @staticmethod
-    # def _grab_flag(msg_split, default_flag):
-    #     """Collects flag from message. If no flag, uses a default"""
-    #     # Check if flag is at the end of the msg
-    #     flag = msg_split[-1]
-    #     if '-' in flag:
-    #         flag = flag.replace('-', '')
-    #         # Skip the last part of the message, as that's the flag
-    #         target = ' '.join(msg_split[1:-1])
-    #     else:
-    #         flag = default_flag
-    #         # Get the rest of the message
-    #         target = ' '.join(msg_split[1:])
-    #     return flag, target
+    @staticmethod
+    def _grab_flag(msg_split, default_flag):
+        """Collects flag from message. If no flag, uses a default"""
+        # Check if flag is at the end of the msg
+        flag = msg_split[-1]
+        if '-' in flag:
+            flag = flag.replace('-', '')
+            # Skip the last part of the message, as that's the flag
+            target = ' '.join(msg_split[1:-1])
+        else:
+            flag = default_flag
+            # Get the rest of the message
+            target = ' '.join(msg_split[1:])
+        return flag, target
 
     @staticmethod
     def _build_flag_dict(col_list):
@@ -572,6 +582,15 @@ class Viktor:
     def get_time(**kwargs):
         """Gets the server time"""
         return f'The server time is `{dt.today():%F %T}`'
+
+    @staticmethod
+    def wfh_epoch(**kwargs):
+        """Calculates WFH epoch time"""
+        wfh_epoch = pd.datetime(year=2020, month=3, day=3, hour=19, minute=15)
+        now = pd.datetime.now()
+        diff = (now - wfh_epoch)
+
+        return f'Current WFH epoch time is `{diff.total_seconds():.0f}`. \n ({diff}) '
 
     # Misc. methods
     # ====================================================
@@ -761,8 +780,11 @@ class Viktor:
 
     def quote_me(self, message, **kwargs):
         """Converts message into letter emojis"""
-        msg = message[len('quote me'):].strip()
-        return self.st.build_phrase(msg)
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            msg = re.sub(match_pattern, '', message).strip()
+            return self.st.build_phrase(msg)
+        return None
 
     # Language methods
     # ====================================================
@@ -778,14 +800,14 @@ class Viktor:
     def prep_message_for_translation(self, message, **kwargs):
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `et <word>` or `en <word>`
-        word = re.sub(r'^e[nt]\s', '', message)
-        target = message[:2]
-
-        if target == 'en':
-            # Make sure the word is a root if it's Estonian
-            processed_word = self.get_root(word)
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            word = re.sub(match_pattern, '', message).strip()
+            target = message[:2]
         else:
-            processed_word = word
+            return None
+
+        processed_word = self.get_root(word) if target == 'en' else word
 
         if processed_word is not None:
             return self._get_translation(processed_word, target)
@@ -823,7 +845,11 @@ class Viktor:
     def prep_message_for_examples(self, message, **kwargs):
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `et <word>` or `en <word>`
-        word = re.sub(r'^ekss\s', '', message)
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            word = re.sub(match_pattern, '', message).strip()
+        else:
+            return None
         processed_word = self.get_root(word)
 
         if processed_word is not None:
@@ -860,7 +886,11 @@ class Viktor:
     def prep_message_for_root(self, message, **kwargs):
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `lemma <word>`
-        word = re.sub(r'^lemma\s', '', message)
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            word = re.sub(match_pattern, '', message).strip()
+        else:
+            return None
 
         # Make sure the word is a root if it's Estonian
         lemma = self.get_root(word)
@@ -932,10 +962,15 @@ class Viktor:
 
     def update_user_level(self, channel, user, message, **kwargs):
         """Increment the user's level"""
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            content = re.sub(match_pattern, '', message).strip()
+        else:
+            return None
+
         if user not in self.approved_users:
             return 'LOL sorry, levelups are CEO-approved only'
 
-        content = message[len('update level'):].strip()
         if '-u' in content:
             # Updating role of other user
             # Extract user
@@ -948,6 +983,7 @@ class Viktor:
             self.roles.loc[self.roles['user'] == user, 'level'] += 1
 
             self.st.send_message(channel, f'Level for <@{user}> updated to `{level_before + 1}`.')
+            self.write_roles()
         else:
             return 'No user tagged for update.'
 
@@ -980,7 +1016,13 @@ class Viktor:
 
     def update_roles(self, user, channel, msg, **kwargs):
         """Updates a user with their role"""
-        content = msg[len('update dooties'):].strip()
+
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            content = re.sub(match_pattern, '', msg).strip()
+        else:
+            return None
+
         if '-u' in content:
             # Updating role of other user
             # Extract user
