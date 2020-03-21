@@ -3,7 +3,6 @@
 import re
 import string
 import requests
-import ety
 import pandas as pd
 import numpy as np
 from datetime import datetime as dt
@@ -832,7 +831,7 @@ class Viktor:
         url = f'https://www.etymonline.com/search?q={parse.quote(word)}'
         content = self._prep_for_xpath(url)
         results = content.xpath('//div[contains(@class, "word--C9UPa")]')
-        output = ''
+        output = ':word:\n'
         if len(results) > 0:
             for result in results:
                 name = get_definition_name(result)
@@ -840,10 +839,6 @@ class Viktor:
                     desc = ' '.join([x for l in result.xpath('object/section') for x in l.itertext()])
                     desc = ' '.join([f'_{x}_' for x in desc.split('\n') if x.strip() != ''])
                     output += f'*`{name}`*:\n{desc}\n'
-
-        etytree = ety.tree(word)
-        if etytree is not None:
-            output = f':word:\n{etytree.__str__()}\n {output}'
 
         if output != '':
             return output
