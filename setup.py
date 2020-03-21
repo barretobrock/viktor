@@ -28,6 +28,10 @@ setup_args = {
         'slacktools',
         'flask==1.1.1',
         'slackeventsapi==2.1.0',
+        'requests==2.10.0',
+        'pandas==0.25.1',
+        'numpy==1.16.2',
+        'lxml==4.4.1'
     ],
 
 }
