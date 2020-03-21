@@ -3,6 +3,7 @@
 import re
 import string
 import requests
+import ety
 import pandas as pd
 import numpy as np
 from datetime import datetime as dt
@@ -227,6 +228,12 @@ class Viktor:
                 'desc': 'Accesses an employee\'s LevelUp registry and increments their level',
                 'value': [self.update_user_level, 'channel', 'user', 'message']
             },
+            r'^ltits': {
+                'pattern': 'ltits -u <user> <number>',
+                'cat': cat_org,
+                'desc': 'Distribute or withdraw LTITs from an employee\'s account',
+                'value': [self.update_user_ltips, 'channel', 'user', 'message']
+            },
             r'^show (my )?perk[s]?': {
                 'pattern': 'show [my] perk(s)',
                 'cat': cat_org,
@@ -262,6 +269,12 @@ class Viktor:
                 'cat': cat_useful,
                 'desc': 'Prints the current WFH epoch time',
                 'value': [self.wfh_epoch]
+            },
+            r'^ety\s': {
+                'pattern': 'ety <word>',
+                'cat': cat_useful,
+                'desc': 'Gets the etymology of a given word',
+                'value': [self.get_etymology, 'message']
             }
         }
 
@@ -471,7 +484,7 @@ class Viktor:
         # Parse out the initial command
         match_pattern = kwargs.pop('match_pattern', None)
         if match_pattern is not None:
-            ptrn = re.sub(match_pattern, message, '').strip()
+            ptrn = re.sub(match_pattern, '', message).strip()
         else:
             return 'Message didn\'t match expected syntax.'
 
@@ -797,6 +810,46 @@ class Viktor:
         tree = etree.parse(StringIO(html), parser=parser)
         return tree
 
+    def get_etymology(self, message, **kwargs):
+        """Grabs the etymology of a word from Etymonline"""
+
+        def get_definition_name(res):
+            item_str = ''
+            for l in res.xpath('object/a'):
+                for x in l.iter():
+                    for item in [x.text, x.tail]:
+                        if item is not None:
+                            if item.strip() != '':
+                                item_str += f' {item}'
+            return item_str.strip()
+
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            word = re.sub(match_pattern, '', message).strip()
+        else:
+            return None
+
+        url = f'https://www.etymonline.com/search?q={parse.quote(word)}'
+        content = self._prep_for_xpath(url)
+        results = content.xpath('//div[contains(@class, "word--C9UPa")]')
+        output = ''
+        if len(results) > 0:
+            for result in results:
+                name = get_definition_name(result)
+                if word in name:
+                    desc = ' '.join([x for l in result.xpath('object/section') for x in l.itertext()])
+                    desc = ' '.join([f'_{x}_' for x in desc.split('\n') if x.strip() != ''])
+                    output += f'*`{name}`*:\n{desc}\n'
+
+        etytree = ety.tree(word)
+        if etytree is not None:
+            output = f':word:\n{etytree.__str__()}\n {output}'
+
+        if output != '':
+            return output
+        else:
+            return f'No etymological data found for `{word}`.'
+
     def prep_message_for_translation(self, message, **kwargs):
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `et <word>` or `en <word>`
@@ -948,6 +1001,7 @@ class Viktor:
         users_df = users_df[users_df['user'] == user]
         if not users_df.empty:
             level = users_df['level'].values[0]
+            ltits = users_df['ltits'].values[0]
             perks_df = self.gs_dict['okr_perks'].copy()
             perks_df = perks_df[perks_df['level'] <= level]
             # Sort by perks level
@@ -956,7 +1010,8 @@ class Viktor:
             for i, row in perks_df.iterrows():
                 perks += f'`lvl {row["level"]}`: {row["perk"]}\n'
             return f'WOW <@{user}>! You\'re at level `{level}`!!\n' \
-                   f'You have access to the following _amazing_ perks:\n\n{perks}'
+                   f'You have access to the following _amazing_ perks:\n\n{perks}\n\n' \
+                   f'...and don\'t forget you have `{ltits}` LTITs! That\'s something, too!'
         else:
             return 'User not found in OKR roles sheet :frowning:'
 
@@ -987,6 +1042,37 @@ class Viktor:
         else:
             return 'No user tagged for update.'
 
+    def update_user_ltips(self, channel, user, message, **kwargs):
+        """Increment the user's level"""
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            content = re.sub(match_pattern, '', message).strip()
+        else:
+            return None
+
+        if user not in self.approved_users:
+            return 'LOL sorry, LTIT distributions are CEO-approved only'
+
+        if '-u' in content:
+            # Updating role of other user
+            # Extract user
+            user = content.split()[1].replace('<@', '').replace('>', '').upper()
+            points = content.split()[-1]
+            if points.replace('-', '').replace('+', '').isnumeric():
+                ltits = int(points.replace('-', '').replace('+', ''))
+                ltits = ltits * -1 if '-' in points else ltits
+                if not -1000 < ltits < 1000:
+                    # Limit the number of ltits that can be distributed at any given time
+                    ltits = 1000 if ltits > 1000 else -1000
+                ltits_before = self.roles.loc[self.roles['user'] == user, 'ltits'].values[0]
+                self.roles.loc[self.roles['user'] == user, 'ltits'] += ltits
+                self.st.send_message(channel, f'LTITs for <@{user}> updated by `{ltits}` to `{ltits_before + ltits}`.')
+                self.write_roles()
+            else:
+                return 'Please put points at the end. (+n, -n, n)'
+        else:
+            return 'No user tagged for update.'
+
     def collect_roleplayers(self):
         """Collects user id and name for people having OKR roles"""
         users = self.st.get_channel_members('CM3E3E82J')  # general
@@ -1009,8 +1095,8 @@ class Viktor:
     def write_roles(self, **kwargs):
         """Writes roles to GSheeets"""
         user_df = self.collect_roleplayers()
-        self.roles = self.roles[['user', 'level', 'role']].merge(user_df, on='user', how='left')
-        self.roles = self.roles[['user', 'name', 'level', 'role']]
+        self.roles = self.roles[['user', 'level', 'ltits', 'role']].merge(user_df, on='user', how='left')
+        self.roles = self.roles[['user', 'name', 'level', 'ltits', 'role']]
 
         self.st.write_sheet(self.viktor_sheet, 'okr_roles', self.roles)
 
@@ -1039,13 +1125,15 @@ class Viktor:
             roles_output = ['*OKR Roles (as of last reorg)*:', '=' * 10]
             # Iterate through roles, print them out
             for i, row in self.roles.iterrows():
-                roles_output.append(f'`{row["name"]}`: Level `{row["level"]}`\n\t\t{row["role"]}')
+                roles_output.append(f'`{row["name"]}`: Level `{row["level"]}` (`{row["ltits"]}` LTITs)\n'
+                                    f'\t\t{row["role"]}')
         else:
             # Printing role for an individual user
             role_row = self.roles[self.roles['user'] == user]
             if not role_row.empty:
                 for i, row in role_row.iterrows():
-                    roles_output = [f'`{row["name"]}`: Level `{row["level"]}` \n\t\t{row["role"]}']
+                    roles_output = [f'`{row["name"]}`: Level `{row["level"]}` (`{row["ltits"]}` LTITs)\n'
+                                    f'\t\t{row["role"]}']
             else:
                 roles_output = ['No roles for you yet. Add them with the `update dooties` command.']
 
