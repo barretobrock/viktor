@@ -1,4 +1,5 @@
 import os
+import signal
 from random import randint
 from flask import Flask
 from slacktools import SlackEventAdapter
@@ -16,6 +17,9 @@ for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN', 'ONBOARD
 
 Bot = Viktor(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'],
              ss_key=key_dict['spreadsheet_key'], onboarding_key=key_dict['onboarding_key'], debug=DEBUG)
+# Register the cleanup function as a signal handler
+signal.signal(signal.SIGINT, Bot.cleanup)
+signal.signal(signal.SIGTERM, Bot.cleanup)
 # Include a means of halting duplicate requests from being handled
 #   until I can figure out a better async protocol
 message_events = []
@@ -67,7 +71,7 @@ def scan_message(event_data):
 
     if msg_packet is not None:
         try:
-            Bot.handle_command(msg_packet)
+            Bot.st.handle_command(msg_packet)
         except Exception as e:
             if not isinstance(e, RuntimeError):
                 exception_msg = '{}: {}'.format(e.__class__.__name__, e)
@@ -116,4 +120,3 @@ def notify_new_statuses(event_data):
                 # Message channel about status update
                 msg = f'<@{uid}> updated their status: {status_hash}'
                 Bot.st.send_message(general_chan, msg)
-
