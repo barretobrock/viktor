@@ -9,10 +9,8 @@ import numpy as np
 from typing import List, Optional, Tuple
 from datetime import datetime as dt
 from random import randint
-from io import StringIO
-import urllib.parse as parse
-from lxml import etree
 from slacktools import SlackBotBase, GSheetReader, BlockKitBuilder
+from .linguistics import Linguistics
 from ._version import get_versions
 
 
@@ -36,6 +34,7 @@ class Viktor:
         self.alerts_channel = 'alerts'  # #alerts
         self.approved_users = ['UM35HE6R5', 'UM3E3G72S']
         self.bkb = BlockKitBuilder()
+        self.ling = Linguistics()
 
         # Bot version stuff
         version_dict = get_versions()
@@ -60,7 +59,7 @@ class Viktor:
                 "but you'll need to call my attention first with " \
                 f"*`{'`* or *`'.join(self.triggers)}`*\n Example: *`v! hello`*\nHere's what I can do:"
         avi_url = "https://ca.slack-edge.com/TM1A69HCM-ULV018W73-1a94c7650d97-512"
-        avi_alt = 'viktor thumbnail'
+        avi_alt = '<record scratch> You\'re probably wondering how I ended up in this situation'
         cat_basic = 'basic'
         cat_useful = 'useful'
         cat_notsouseful = 'not so useful'
@@ -256,19 +255,19 @@ class Viktor:
                 'pattern': '(et|en) <word-to-translate>',
                 'cat': cat_lang,
                 'desc': 'Offers a translation of an Estonian word into English or vice-versa',
-                'value': [self.prep_message_for_translation, 'message']
+                'value': [self.ling.prep_message_for_translation, 'message']
             },
             r'^ekss\s': {
                 'pattern': 'ekss <word-to-lookup>',
                 'cat': cat_lang,
                 'desc': 'Offers example usage of the given Estonian word',
-                'value': [self.prep_message_for_examples, 'message']
+                'value': [self.ling.prep_message_for_examples, 'message']
             },
             r'^lemma\s': {
                 'pattern': 'lemma <word-to-lookup>',
                 'cat': cat_lang,
                 'desc': 'Determines the lemma of the Estonian word',
-                'value': [self.prep_message_for_root, 'message']
+                'value': [self.ling.prep_message_for_root, 'message']
             },
             r'^wfh\s?(time|epoch)': {
                 'pattern': 'wfh (time|epoch)',
@@ -280,7 +279,7 @@ class Viktor:
                 'pattern': 'ety <word>',
                 'cat': cat_useful,
                 'desc': 'Gets the etymology of a given word',
-                'value': [self.get_etymology, 'message']
+                'value': [self.ling.get_etymology, 'message']
             }
         }
 
@@ -701,188 +700,26 @@ class Viktor:
             return self.st.build_phrase(msg)
         return None
 
-    # Language methods
-    # ====================================================
-    @staticmethod
-    def _prep_for_xpath(url):
-        """Takes in a url and returns a tree that can be searched using xpath"""
-        page = requests.get(url)
-        html = page.content.decode('utf-8')
-        parser = etree.HTMLParser()
-        tree = etree.parse(StringIO(html), parser=parser)
-        return tree
-
-    def get_etymology(self, message, **kwargs):
-        """Grabs the etymology of a word from Etymonline"""
-
-        def get_definition_name(res):
-            item_str = ''
-            for l in res.xpath('object/a'):
-                for x in l.iter():
-                    for item in [x.text, x.tail]:
-                        if item is not None:
-                            if item.strip() != '':
-                                item_str += f' {item}'
-            return item_str.strip()
-
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            word = re.sub(match_pattern, '', message).strip()
-        else:
-            return None
-
-        url = f'https://www.etymonline.com/search?q={parse.quote(word)}'
-        content = self._prep_for_xpath(url)
-        results = content.xpath('//div[contains(@class, "word--C9UPa")]')
-        output = ':word:\n'
-        if len(results) > 0:
-            for result in results:
-                name = get_definition_name(result)
-                if word in name:
-                    desc = ' '.join([x for l in result.xpath('object/section') for x in l.itertext()])
-                    desc = ' '.join([f'_{x}_' for x in desc.split('\n') if x.strip() != ''])
-                    output += f'*`{name}`*:\n{desc}\n'
-
-        if output != '':
-            return output
-        else:
-            return f'No etymological data found for `{word}`.'
-
-    def prep_message_for_translation(self, message, **kwargs):
-        """Takes in the raw message and prepares it for lookup"""
-        # Format should be like `et <word>` or `en <word>`
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            word = re.sub(match_pattern, '', message).strip()
-            target = message[:2]
-        else:
-            return None
-
-        processed_word = self.get_root(word) if target == 'en' else word
-
-        if processed_word is not None:
-            return self._get_translation(processed_word, target)
-        else:
-            return f'Translation not found for `{word}`.'
-
-    def _get_translation(self, word, target='en'):
-        """Returns the English translation of the Estonian word"""
-        # Find the English translation of the word using EKI
-        eki_url = f'http://www.eki.ee/dict/ies/index.cgi?Q={parse.quote(word)}&F=V&C06={target}'
-        content = self._prep_for_xpath(eki_url)
-
-        results = content.xpath('//div[@class="tervikart"]')
-        result = []
-        for i in range(0, len(results)):
-            et_result = content.xpath(f'(//div[@class="tervikart"])[{i + 1}]/*/span[@lang="et"]')
-            en_result = content.xpath(f'(//div[@class="tervikart"])[{i + 1}]/*/span[@lang="en"]')
-            # Process text in elements
-            et_result = [''.join(x.itertext()) for x in et_result]
-            en_result = [''.join(x.itertext()) for x in en_result]
-            if target == 'en':
-                if word in et_result:
-                    result += en_result
-            else:
-                if word in en_result:
-                    result += et_result
-
-        if len(result) > 0:
-            # Make all entries lowercase and remove dupes
-            result = list(set(map(str.lower, result)))
-            return f"`{word}`: {', '.join(result)}"
-        else:
-            return f'No results found for `{word}` :frowning:'
-
-    def prep_message_for_examples(self, message, **kwargs):
-        """Takes in the raw message and prepares it for lookup"""
-        # Format should be like `et <word>` or `en <word>`
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            word = re.sub(match_pattern, '', message).strip()
-        else:
-            return None
-        processed_word = self.get_root(word)
-
-        if processed_word is not None:
-            return self._get_examples(processed_word, max_n=5)
-        else:
-            return f'No examples found for `{word}`.'
-
-    def _get_examples(self, word, max_n=5):
-        """Returns some example sentences of the Estonian word"""
-        # Find the English translation of the word using EKI
-        ekss_url = f'http://www.eki.ee/dict/ekss/index.cgi?Q={parse.quote(word)}&F=M'
-        content = self._prep_for_xpath(ekss_url)
-
-        results = content.xpath('//div[@class="tervikart"]')
-        exp_list = []
-        for i in range(0, len(results)):
-            result = content.xpath(f'(//div[@class="tervikart"])[{i + 1}]/*/span[@class="m leitud_id"]')
-            examples = content.xpath(f'(//div[@class="tervikart"])[{i + 1}]/*/span[@class="n"]')
-            # Process text in elements
-            result = [''.join(x.itertext()) for x in result]
-            examples = [''.join(x.itertext()) for x in examples]
-            if word in result:
-                re.split(r'[?\.!]', ''.join(examples))
-                exp_list += re.split(r'[?\.!]', ''.join(examples))
-                # Strip of leading / tailing whitespace
-                exp_list = [x.strip() for x in exp_list if x.strip() != '']
-                if len(exp_list) > max_n:
-                    exp_list = [exp_list[x] for x in np.random.choice(len(exp_list), max_n, False).tolist()]
-                examples = '\n'.join([f'`{x}`' for x in exp_list])
-                return f'Examples for `{word}`:\n{examples}'
-
-        return f'No example sentences found for `{word}`'
-
-    def prep_message_for_root(self, message, **kwargs):
-        """Takes in the raw message and prepares it for lookup"""
-        # Format should be like `lemma <word>`
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            word = re.sub(match_pattern, '', message).strip()
-        else:
-            return None
-
-        # Make sure the word is a root if it's Estonian
-        lemma = self.get_root(word)
-
-        if lemma is not None:
-            return f'Lemma for `{word}`: `{lemma}`'
-        else:
-            return f'Lemmatization not found for `{word}`.'
-
-    @staticmethod
-    def get_root(word):
-        """Retrieves the root word (nom. sing.) from Lemmatiseerija"""
-        # First, look up the word's root with the lemmatiseerija
-        lemma_url = f'https://www.filosoft.ee/lemma_et/lemma.cgi?word={parse.quote(word)}'
-        content = requests.get(lemma_url).content
-        content = str(content, 'utf-8')
-        # Use regex to find the word/s
-        lemma_regex = re.compile(r'<strong>.*na\slemma[d]?\son:<\/strong><br>(\w+)<br>')
-        match = lemma_regex.search(content)
-        word = None
-        if match is not None:
-            word = match.group(1)
-        return word
-
     # OKR Roles / Perks
     # ====================================================
-    def onboarding_docs(self, **kwargs):
+    def onboarding_docs(self, **kwargs) -> List[dict]:
         """Returns links to everything needed to bring a new OKR employee up to speed"""
-        docs = f"""
-        Welcome to OKR! We're glad to have you on board! 
-        Check out these links below to get familiar with OKR and the industry we support!
-
-        Onboarding Doc: {self.onboarding_link}
-        Viktor's GSheet: {self.viktor_sheet_link}
-
-        For any questions, reach out to the CEO or our Head of Recruiting. 
-            Don't know who they are? Well, figure it out!
-        """
+        docs = [
+            self.bkb.make_block_section([
+                "Welcome to OKR! We're glad to have you on board!\nCheck out these links below "
+                "to get familiar with OKR and the industry we support!"
+            ]),
+            self.bkb.make_block_section([
+                f"\t<Onboarding Doc|{self.onboarding_link}>\n\t<Viktor's GSheet|{self.viktor_sheet_link}>\n"
+            ]),
+            self.bkb.make_block_section([
+                "For any questions, reach out to the CEO or our Head of Recruiting. "
+                "Don't know who they are? Well, figure it out!"
+            ])
+        ]
         return docs
 
-    def show_all_perks(self, **kwargs):
+    def show_all_perks(self, **kwargs) -> str:
         """Displays all the perks"""
         perks_df = self.gs_dict['okr_perks']
         perks_df = perks_df.sort_values('level')
@@ -892,7 +729,7 @@ class Viktor:
             perks += f'`lvl {level}`: \n\t\t - {perk_list}\n'
         return f'*OKR perks*:\n{perks}'
 
-    def show_my_perks(self, user, **kwargs):
+    def show_my_perks(self, user: str, **kwargs) -> str:
         """Lists the perks granted at the user's current level"""
         # Get the user's level
         users_df = self.gs_dict['okr_roles'].copy()
@@ -913,7 +750,7 @@ class Viktor:
         else:
             return 'User not found in OKR roles sheet :frowning:'
 
-    def update_user_level(self, channel, user, message, **kwargs):
+    def update_user_level(self, channel: str, user: str, message: str, **kwargs) -> Optional[str]:
         """Increment the user's level"""
         match_pattern = kwargs.pop('match_pattern', None)
         if match_pattern is not None:
@@ -940,7 +777,7 @@ class Viktor:
         else:
             return 'No user tagged for update.'
 
-    def update_user_ltips(self, channel, user, message, **kwargs):
+    def update_user_ltips(self, channel: str, user: str, message: str, **kwargs) -> Optional[str]:
         """Increment the user's level"""
         match_pattern = kwargs.pop('match_pattern', None)
         if match_pattern is not None:
@@ -971,7 +808,7 @@ class Viktor:
         else:
             return 'No user tagged for update.'
 
-    def collect_roleplayers(self):
+    def collect_roleplayers(self) -> pd.DataFrame:
         """Collects user id and name for people having OKR roles"""
         users = self.st.get_channel_members('CM3E3E82J')  # general
 
@@ -986,7 +823,7 @@ class Viktor:
 
         return user_df[['user', 'name']]
 
-    def read_roles(self):
+    def read_roles(self) -> pd.DataFrame:
         """Reads in JSON of roles"""
         return self.gs_dict['okr_roles']
 
@@ -998,7 +835,7 @@ class Viktor:
 
         self.st.write_sheet(self.viktor_sheet, 'okr_roles', self.roles)
 
-    def update_roles(self, user, channel, msg, **kwargs):
+    def update_roles(self, user: str, channel: str, msg: str, **kwargs) -> Optional:
         """Updates a user with their role"""
 
         match_pattern = kwargs.pop('match_pattern', None)
@@ -1015,12 +852,12 @@ class Viktor:
         self.roles.loc[self.roles['user'] == user, 'role'] = content
         self.st.send_message(channel, 'Role for <@{}> updated.'.format(user))
 
-    def show_roles(self, user=None, **kwargs):
+    def show_roles(self, user: str = None, **kwargs) -> List[str]:
         """Prints users roles to channel"""
-
+        roles_output = []
         if user is None:
             # Printing roles for everyone
-            roles_output = ['*OKR Roles (as of last reorg)*:', '=' * 10]
+            roles_output += ['*OKR Roles (as of last reorg)*:', '=' * 10]
             # Iterate through roles, print them out
             for i, row in self.roles.iterrows():
                 roles_output.append(f'`{row["name"]}`: Level `{row["level"]}` (`{row["ltits"]}` LTITs)\n'
@@ -1030,14 +867,14 @@ class Viktor:
             role_row = self.roles[self.roles['user'] == user]
             if not role_row.empty:
                 for i, row in role_row.iterrows():
-                    roles_output = [f'`{row["name"]}`: Level `{row["level"]}` (`{row["ltits"]}` LTITs)\n'
-                                    f'\t\t{row["role"]}']
+                    roles_output.append(f'`{row["name"]}`: Level `{row["level"]}` (`{row["ltits"]}` LTITs)\n'
+                                        f'\t\t{row["role"]}')
             else:
-                roles_output = ['No roles for you yet. Add them with the `update dooties` command.']
+                roles_output.append('No roles for you yet. Add them with the `update dooties` command.')
 
         return roles_output
 
-    def build_role_txt(self, channel, user=None, **kwargs):
+    def build_role_txt(self, channel: str, user: str = None, **kwargs):
         """Constructs a text blob consisting of roles without exceeding the character limits of Slack"""
         roles_output = self.show_roles(user)
         role_txt = ''
