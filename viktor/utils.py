@@ -1,42 +1,53 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import re
+import sys
 import string
 import requests
 import pandas as pd
 import numpy as np
+from typing import List, Optional, Tuple
 from datetime import datetime as dt
 from random import randint
 from io import StringIO
 import urllib.parse as parse
 from lxml import etree
-from slacktools import SlackTools, GSheetReader
+from slacktools import SlackBotBase, GSheetReader, BlockKitBuilder
 from ._version import get_versions
 
 
 class Viktor:
     """Handles messaging to and from Slack API"""
 
-    def __init__(self, log_name, xoxb_token, xoxp_token, ss_key, onboarding_key, debug=False):
+    def __init__(self, log_name: str, xoxb_token: str, xoxp_token: str, ss_key: str, onboarding_key: str,
+                 debug: bool = False):
         """
-        :param log_name: str, name of the log to retrieve
-        :param debug: bool,
+        Args:
+            log_name: str, name of the kavalkilu.Log object to retrieve
+            xoxb_token: str, bot token to use
+            xoxp_token: str, user token to use
+            ss_key: str, spreadsheet containing various things Viktor reads in
+            onboarding_key: str, link to onboarding documentation
+            debug: bool, if True, will use a different set of triggers for testing purposes
         """
         self.bot_name = 'Viktor'
         self.triggers = ['viktor', 'v!'] if not debug else ['deviktor', 'dv!']
+        self.main_channel = 'CM376Q90F'  # test
         self.alerts_channel = 'alerts'  # #alerts
-        # Read in common tools for interacting with Slack's API
-        self.st = SlackTools(log_name, triggers=self.triggers, team='orbitalkettlerelay',
-                             xoxp_token=xoxp_token, xoxb_token=xoxb_token)
-        # Two types of API interaction: bot-level, user-level
-        self.bot = self.st.bot
-        self.user = self.st.user
-        self.bot_id = self.bot.auth_test()['user_id']
-
         self.approved_users = ['UM35HE6R5', 'UM3E3G72S']
-        self.emoji_list = self._get_emojis()
-        self.gs_dict = {}
+        self.bkb = BlockKitBuilder()
 
+        # Bot version stuff
+        version_dict = get_versions()
+        self.version = version_dict['version']
+        self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
+        self.bootup_msg = [self.bkb.make_context_section([
+            f"*{self.bot_name}* *`{self.version}`* booted up at `{pd.datetime.now():%F %T}`!",
+            f"(updated {self.update_date})"
+        ])]
+
+        # GSheets stuff
+        self.gs_dict = {}
         self.viktor_sheet = ss_key
         self.onboarding_key = onboarding_key
         self.viktor_sheet_link = f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
@@ -44,28 +55,24 @@ class Viktor:
         self._read_in_sheets()
         self.roles = self.read_roles()
 
-        version_dict = get_versions()
-        self.version = version_dict['version']
-        self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
-        self.bootup_msg = f'```Booted up at {pd.datetime.now():%F %T}! '\
-                          f'\n\t{self.version} (updated {self.update_date})```'
-        self.st.send_message('test', self.bootup_msg)
-
-        # This will be built later
-        self.help_txt = ''
-
+        # Intro / help / command description area
+        intro = "Здравствуйте! I'm *Viktor* (:regional_indicator_v: for short).\nI can help do stuff for you, " \
+                "but you'll need to call my attention first with " \
+                f"*`{'`* or *`'.join(self.triggers)}`*\n Example: *`v! hello`*\nHere's what I can do:"
+        avi_url = "https://ca.slack-edge.com/TM1A69HCM-ULV018W73-1a94c7650d97-512"
+        avi_alt = 'viktor thumbnail'
         cat_basic = 'basic'
         cat_useful = 'useful'
         cat_notsouseful = 'not so useful'
         cat_org = 'org'
         cat_lang = 'language'
-
-        self.cmd_dict = {
+        cmd_categories = [cat_basic, cat_useful, cat_notsouseful, cat_lang, cat_org]
+        commands = {
             r'^help': {
                 'pattern': 'help',
                 'cat': cat_basic,
                 'desc': 'Description of all the commands I respond to!',
-                'value': self.help_txt,
+                'value': '',
             },
             r'^about$': {
                 'pattern': 'about',
@@ -263,8 +270,8 @@ class Viktor:
                 'desc': 'Determines the lemma of the Estonian word',
                 'value': [self.prep_message_for_root, 'message']
             },
-            r'^wfh(time|\s?epoch)': {
-                'pattern': 'wfh(time| epoch)',
+            r'^wfh\s?(time|epoch)': {
+                'pattern': 'wfh (time|epoch)',
                 'cat': cat_useful,
                 'desc': 'Prints the current WFH epoch time',
                 'value': [self.wfh_epoch]
@@ -277,133 +284,33 @@ class Viktor:
             }
         }
 
+        # Initate the bot, which comes with common tools for interacting with Slack's API
+        self.st = SlackBotBase(log_name, triggers=self.triggers, team='orbitalkettlerelay',
+                               main_channel=self.main_channel, xoxp_token=xoxp_token, xoxb_token=xoxb_token,
+                               commands=commands, cmd_categories=cmd_categories)
+        self.bot_id = self.st.bot_id
+        self.bot = self.st.bot
+        self.emoji_list = self._get_emojis()
+
+        self.st.message_main_channel(blocks=self.bootup_msg)
+
         # Lastly, build the help text based on the commands above and insert back into the commands dict
-        self.build_help_txt()
-        self.cmd_dict[r'^help']['value'] = self.help_txt
+        commands[r'^help']['value'] = self.st.build_help_block(intro, avi_url, avi_alt)
+        # Update the command dict in SlackBotBase
+        self.st.update_commands(commands)
 
-    def build_help_txt(self, **kwargs):
-        """Builds Viktor's description of functions into a giant wall of text"""
-
-        intro_txt = "Здравствуйте! I'm Viktor (V for short). \nI can do stuff for you as long as " \
-                    "you call my attention first with `viktor` or `v!`\n Here's what I can do:"
-        help_dict = {
-            'basic': [],
-            'useful': [],
-            'not so useful': [],
-            'org': [],
-            'language': [],
-        }
-        for k, v in self.cmd_dict.items():
-            if 'pattern' not in v.keys():
-                v['pattern'] = k
-            help_dict[v['cat']].append(f' - `{v["pattern"]}`: {v["desc"]}')
-
-        command_frags = []
-        for k, v in help_dict.items():
-            list_of_cmds = "\n\t".join(v)
-            command_frags.append(f'*{k.title()} Commands*:\n\t{list_of_cmds}')
-
-        self.help_txt = "{}\n{}".format(intro_txt, '\n'.join(command_frags))
-
-    # Packet handling
-    # ====================================================
-    @staticmethod
-    def _flag_parser(message):
-        """Takes in a message string and parses out flags in the string and the values following them
-        Args:
-            message: str, the command message containing the flags
-
-        Returns:
-            dict, flags parsed out into keys
-
-        Example:
-            >>> msg = 'process this command -u this that other --p 1 2 3 4 5'
-            >>> _flag_parser(msg)
-            >>> {'cmd': 'process this command', 'u': ['this', 'that', 'other'], 'p': ['1', '2', '3', '4', '5']}
-        """
-        msg_split = message.split(' ')
-        cmd_dict = {'cmd': re.split(r'\-+\w+', message)[0].strip()}
-        flag_regex = re.compile(r'^\-+(\w+)')
-        for i, part in enumerate(msg_split):
-            if flag_regex.match(part) is not None:
-                flag = flag_regex.match(part).group(1)
-                # Get list of values after the flag up until the next flag
-                vals = []
-                for val in msg_split[i + 1:]:
-                    if flag_regex.match(val) is not None:
-                        break
-                    vals.append(val)
-                cmd_dict[flag] = vals
-        return cmd_dict
-
-    @staticmethod
-    def call_command(cmd, *args, **kwargs):
-        """
-        Calls the command referenced while passing in arguments
-        :return: None or string
-        """
-        return cmd(*args, **kwargs)
-
-    def handle_command(self, event_dict):
-        """Handles a bot command if it's known"""
-        # Simple commands that we can map to a function
-        response = None
-        message = event_dict['message']
-        channel = event_dict['channel']
-
-        is_matched = False
-        for regex, resp_dict in self.cmd_dict.items():
-            match = re.match(regex, message)
-            if match is not None:
-                # We've matched on a command
-                resp = resp_dict['value']
-                if isinstance(resp, list):
-                    # Copy the list to ensure changes aren't propagated to the command list
-                    resp_list = resp.copy()
-                    # Examine list, replace any known strings ('message', 'channel', etc.)
-                    #   with event context variables
-                    for k, v in event_dict.items():
-                        if k in resp_list:
-                            resp_list[resp_list.index(k)] = v
-                    # Function with args; sometimes response can be None
-                    response = self.call_command(*resp_list, match_pattern=regex)
-                else:
-                    # String response
-                    response = resp
-                is_matched = True
-                break
-        if message != '' and not is_matched:
-            if randint(0, 1) == 1:
-                response = f'LOL yea. :Q:`{message}`:Q: - I\'ll get right on that, bud...'
-            else:
-                response = f"I didn\'t understand this: `{message}`\n " \
-                           f"Use {' or '.join([f'`{x} help`' for x in self.triggers])} to get a list of my commands."
-
-        if response is not None:
-            try:
-                response = response.format(**event_dict)
-            except KeyError:
-                # Response likely has some curly braces in it that disrupt str.format().
-                # Pass string without formatting
-                pass
-            self.st.send_message(channel, response)
+    def cleanup(self, *args):
+        """Runs just before instance is destroyed"""
+        notify_block = [
+            self.bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:'),
+            self.bkb.make_context_section(self.st.build_phrase('pour one out'))
+        ]
+        self.st.message_main_channel(blocks=notify_block)
+        sys.exit(0)
 
     # General support methods
     # ====================================================
-    def get_prev_msg_in_channel(self, channel, timestamp):
-        """Gets the previous message from the channel"""
-        resp = self.bot.conversations_history(
-            channel=channel,
-            latest=timestamp,
-            limit=10)
-        if not resp['ok']:
-            return None
-        if 'messages' in resp.data.keys():
-            msgs = resp['messages']
-            return msgs[0]['text']
-        return None
-
-    def get_channel_stats(self, channel, **kwargs):
+    def get_channel_stats(self, channel: str, **kwargs) -> str:
         """Collects posting stats for a given channel"""
         msgs = self.st.get_channel_history(channel, limit=1000)
         results = {}
@@ -456,28 +363,24 @@ class Viktor:
                    '```{}```'.format(len(msgs), self.st.df_to_slack_table(res_df))
         return response
 
-    def message_grp(self, message):
-        """Wrapper to send message to whole channel"""
-        self.st.send_message(self.alerts_channel, message)
-
-    def get_user_by_id(self, user_id, user_list):
+    def get_user_by_id(self, user_id: str, user_list: List[dict]) -> dict:
         """Returns a dictionary of player info that has a matching 'id' value in a list of player dicts"""
         user_idx = self.get_user_index_by_id(user_id, user_list)
         return user_list[user_idx]
 
     @staticmethod
-    def get_user_index_by_id(user_id, user_list):
+    def get_user_index_by_id(user_id: str, user_list: List[dict]) -> int:
         """Returns the index of a player in a list of players that has a matching 'id' value"""
         return user_list.index([x for x in user_list if x['id'] == user_id][0])
 
-    def _get_emojis(self, **kwargs):
+    def _get_emojis(self, **kwargs) -> List[str]:
         """Collect emojis in workspace, remove those that are parts of a larger emoji"""
         emojis = list(self.st.get_emojis().keys())
         regex = re.compile('.*[0-9][-_][0-9].*')
         matches = list(filter(regex.match, emojis))
         return [x for x in emojis if x not in matches]
 
-    def get_emojis_like(self, message, max_res=500, **kwargs):
+    def get_emojis_like(self, message: str, max_res: int = 500, **kwargs) -> str:
         """Gets emojis matching in the system that match a given regex pattern"""
 
         # Parse out the initial command
@@ -518,13 +421,13 @@ class Viktor:
                 sheet.title: gs.get_sheet(sheet.title)
             })
 
-    def refresh_sheets(self, **kwargs):
+    def refresh_sheets(self, **kwargs) -> str:
         """Refreshes Viktor's Google Sheet"""
         self._read_in_sheets()
         return 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
 
     @staticmethod
-    def _grab_flag(msg_split, default_flag):
+    def _grab_flag(msg_split: List[str], default_flag: str) -> Tuple[str, str]:
         """Collects flag from message. If no flag, uses a default"""
         # Check if flag is at the end of the msg
         flag = msg_split[-1]
@@ -539,7 +442,7 @@ class Viktor:
         return flag, target
 
     @staticmethod
-    def _build_flag_dict(col_list):
+    def _build_flag_dict(col_list: List[str]) -> dict:
         """Builds a dictionary of the columns for a particular sheet that
             contains several ordered columns grouped under a central theme"""
         # Parse the columns into flags and order
@@ -556,7 +459,7 @@ class Viktor:
     # Basic / Static standalone methods
     # ====================================================
     @staticmethod
-    def sarcastic_response():
+    def sarcastic_response() -> str:
         """Sends back a sarcastic response when user is not allowed to use the action requested"""
         sarcastic_reponses = [
             ''.join([':ah-ah-ah:'] * randint(0, 50)),
@@ -569,7 +472,7 @@ class Viktor:
         return sarcastic_reponses[randint(0, len(sarcastic_reponses) - 1)]
 
     @staticmethod
-    def giggle(**kwargs):
+    def giggle(**kwargs) -> str:
         """Laughs, uncontrollably at times"""
         # Count the 'no's
         laugh_cycles = randint(1, 500)
@@ -577,7 +480,7 @@ class Viktor:
         return response
 
     @staticmethod
-    def overly_polite(message, **kwargs):
+    def overly_polite(message: str, **kwargs) -> str:
         """Responds to 'no, thank you' with an extra 'no' """
         # Count the 'no's
         no_cnt = message.count('no')
@@ -586,17 +489,17 @@ class Viktor:
         return response
 
     @staticmethod
-    def access_something(**kwargs):
+    def access_something(**kwargs) -> str:
         """Return random number of ah-ah-ah emojis (Jurassic Park movie reference)"""
         return ''.join([':ah-ah-ah:'] * randint(5, 50))
 
     @staticmethod
-    def get_time(**kwargs):
+    def get_time(**kwargs) -> str:
         """Gets the server time"""
         return f'The server time is `{dt.today():%F %T}`'
 
     @staticmethod
-    def wfh_epoch(**kwargs):
+    def wfh_epoch(**kwargs) -> str:
         """Calculates WFH epoch time"""
         wfh_epoch = pd.datetime(year=2020, month=3, day=3, hour=19, minute=15)
         now = pd.datetime.now()
@@ -606,13 +509,13 @@ class Viktor:
 
     # Misc. methods
     # ====================================================
-    def sh_response(self, **kwargs):
+    def sh_response(self, **kwargs) -> str:
         """Responds to SHs"""
         resp_df = self.gs_dict['responses']
         responses = resp_df['responses_list'].unique().tolist()
         return responses[randint(0, len(responses) - 1)]
 
-    def guess_acronym(self, message, **kwargs):
+    def guess_acronym(self, message: str, **kwargs) -> str:
         """Tries to guess an acronym from a message"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -657,7 +560,7 @@ class Viktor:
         return ':robot-face: Here are my guesses for *{}*!\n {}'.format(acronym.upper(),
                                                                         '\n_OR_\n'.join(guesses))
 
-    def insult(self, message, **kwargs):
+    def insult(self, message: str, **kwargs) -> str:
         """Insults the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -685,7 +588,7 @@ class Viktor:
         else:
             return "{} aint nothin but a {}".format(target, ' '.join(insults))
 
-    def compliment(self, message, user, **kwargs):
+    def compliment(self, message: str, user: str, **kwargs) -> str:
         """Insults the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -723,7 +626,7 @@ class Viktor:
         else:
             return "Dear {}, {} <@{}>".format(target, ' '.join(compliments), user)
 
-    def inspirational(self, channel, **kwargs):
+    def inspirational(self, channel: str, **kwargs):
         """Sends a random inspirational message"""
         resp = requests.get('http://inspirobot.me/api?generate=true')
         if resp.status_code == 200:
@@ -735,11 +638,11 @@ class Viktor:
                     f.write(img.content)
                 self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
 
-    def uwu_that(self, channel, ts, **kwargs):
+    def uwu_that(self, channel: str, ts: str, **kwargs) -> str:
         """Retrieves previous message and converts to UwU"""
-        return self.uwu(self.get_prev_msg_in_channel(channel, ts))
+        return self.uwu(self.st.get_prev_msg_in_channel(channel, ts))
 
-    def uwu(self, msg, **kwargs):
+    def uwu(self, msg: str, **kwargs) -> str:
         """uwu-fy a message"""
         default_lvl = 2
 
@@ -790,7 +693,7 @@ class Viktor:
 
         return text.replace('`', ' ')
 
-    def quote_me(self, message, **kwargs):
+    def quote_me(self, message: str, **kwargs) -> Optional[str]:
         """Converts message into letter emojis"""
         match_pattern = kwargs.pop('match_pattern', None)
         if match_pattern is not None:
