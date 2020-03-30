@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import re
 import requests
+import json
 import numpy as np
 import urllib.parse as parse
 from typing import Optional
@@ -370,7 +371,11 @@ class Linguistics:
     def translate_anything(self, text: str, target_lang: str) -> dict:
         """Uses Google Translate (heh) to try and translate any phrase"""
         # Pick up detection confidence
-        src = self.trans.detect(text)
+        try:
+            src = self.trans.detect(text)
+        except json.JSONDecodeError:
+            text = re.sub(r'[^\w\s]+', '', text)
+            src = self.trans.detect(text)
         src_lang = src.lang
         translation = self.trans.translate(text, dest=target_lang, src=src_lang)
         return {

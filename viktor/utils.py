@@ -28,6 +28,7 @@ class Viktor:
             onboarding_key: str, link to onboarding documentation
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
+        self.debug = debug
         self.bot_name = f'Viktor {"Debugnov" if debug else "Produdnik"}'
         self.triggers = ['viktor', 'v!'] if not debug else ['deviktor', 'dv!']
         self.main_channel = 'CM376Q90F'  # test
@@ -300,6 +301,7 @@ class Viktor:
                                main_channel=self.main_channel, xoxp_token=xoxp_token, xoxb_token=xoxb_token,
                                commands=commands, cmd_categories=cmd_categories)
         self.bot_id = self.st.bot_id
+        self.user_id = self.st.user_id
         self.bot = self.st.bot
         self.emoji_list = self._get_emojis()
 

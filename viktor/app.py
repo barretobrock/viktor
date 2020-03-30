@@ -1,5 +1,6 @@
 import os
 import signal
+import traceback
 from random import randint
 from flask import Flask
 from slacktools import SlackEventAdapter
@@ -35,7 +36,7 @@ bot_events = SlackEventAdapter(key_dict['signing_secret'], "/viktor/vikapi/event
 @bot_events.on('reaction_added')
 def reaction(event_data):
     event = event_data['event']
-    if event['user'] != Bot.bot_id:
+    if event['user'] not in [Bot.bot_id, Bot.user_id]:
         # Keep from reacting to own reaction
         emojis = Bot.emoji_list
         random_emoji = emojis[randint(0, len(emojis))]
@@ -75,7 +76,15 @@ def scan_message(event_data):
         except Exception as e:
             if not isinstance(e, RuntimeError):
                 exception_msg = '{}: {}'.format(e.__class__.__name__, e)
-                Bot.st.send_message(msg_packet['channel'], "Exception occurred: \n```{}```".format(exception_msg))
+                if Bot.debug:
+                    blocks = [
+                        Bot.bkb.make_context_section("Exception occurred: \n```{}```".format(exception_msg)),
+                        Bot.bkb.make_block_divider(),
+                        Bot.bkb.make_context_section(f'```{traceback.format_exc()}```')
+                    ]
+                    Bot.st.send_message(msg_packet['channel'], message='', blocks=blocks)
+                else:
+                    Bot.st.send_message(msg_packet['channel'], f"Exception occurred: \n```{exception_msg}```")
 
 
 @bot_events.on('emoji_changed')
