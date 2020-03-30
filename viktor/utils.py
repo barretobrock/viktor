@@ -6,7 +6,7 @@ import string
 import requests
 import pandas as pd
 import numpy as np
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 from datetime import datetime as dt
 from random import randint
 from slacktools import SlackBotBase, GSheetReader, BlockKitBuilder
@@ -108,6 +108,18 @@ class Viktor:
                 'cat': cat_basic,
                 'desc': '_Really_ basic response here.',
                 'value': 'woof',
+            },
+            r'^translate that': {
+                'pattern': 'translate that <target_lang_code>',
+                'cat': cat_lang,
+                'desc': 'Translate the text immediately above this command.',
+                'value': [self.translate_that, 'channel', 'ts', 'message'],
+            },
+            r'^translate (in)?to': {
+                'pattern': 'translate to <target_lang_code>',
+                'cat': cat_lang,
+                'desc': 'Translates the text to the target language',
+                'value': [self.translate_anything, 'message'],
             },
             r'^uwu that$': {
                 'pattern': 'uwu that',
@@ -636,6 +648,56 @@ class Viktor:
                 with open('/tmp/inspirational.jpg', 'wb') as f:
                     f.write(img.content)
                 self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
+
+    def translate_that(self, channel: str, ts: str, message: str, **kwargs) -> Union[str, List[dict]]:
+        """Retrieves previous message and tries to translate it into whatever the target language is"""
+        match_pattern = kwargs.pop('match_pattern', None)
+        target_lang = 'et'
+        if match_pattern is not None:
+            msg = re.sub(match_pattern, '', message).strip()
+            if msg == '':
+                return 'No target language code specified!'
+            target_lang = msg.split()[0]
+            if len(target_lang) != 2:
+                # Probably not a proper language code?
+                return f'Unrecognized language code {target_lang}'
+
+        prev_msg = self.st.get_prev_msg_in_channel(channel, ts)
+
+        return self.translate_anything(f'{target_lang} {prev_msg}')
+
+    def translate_anything(self, message: str, **kwargs) -> Union[str, List[dict]]:
+        """Attempts to translate any phrase into the target language defined at the beginning of the command"""
+        match_pattern = kwargs.pop('match_pattern', None)
+        if match_pattern is not None:
+            # Request came directly
+            msg = re.sub(match_pattern, '', message).strip()
+            if msg == '':
+                return 'Missing language code and content.'
+            msg_split = msg.split()
+            target_lang = msg_split[0]
+            text = ' '.join(msg_split[1:])
+        else:
+            # Request came indirectly
+            msg_split = message.split()
+            target_lang = msg_split[0]
+            text = ' '.join(msg_split[1:])
+
+        if len(target_lang) != 2:
+            # Probably not a proper language code?
+            return f'Unrecognized language code {target_lang}'
+
+        # Get a dictionary showing the source/target languages,
+        #   as well as the confidence and the translation itself
+        lang_dict = self.ling.translate_anything(text=text, target_lang=target_lang)
+
+        return [
+            self.bkb.make_context_section([
+                '*`{src_name} -> {tgt_name}`*\t src lang confidence:\t{conf:.1%}'.format(**lang_dict)
+            ]),
+            self.bkb.make_block_divider(),
+            self.bkb.make_block_section(lang_dict['translation'])
+        ]
 
     def uwu_that(self, channel: str, ts: str, **kwargs) -> str:
         """Retrieves previous message and converts to UwU"""

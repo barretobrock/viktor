@@ -31,7 +31,8 @@ setup_args = {
         'requests==2.10.0',
         'pandas==0.25.1',
         'numpy==1.16.2',
-        'lxml==4.4.1'
+        'lxml==4.4.1',
+        'googletrans==2.4.0'
     ],
 
 }
