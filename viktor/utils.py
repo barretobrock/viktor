@@ -28,7 +28,7 @@ class Viktor:
             onboarding_key: str, link to onboarding documentation
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
-        self.bot_name = 'Viktor'
+        self.bot_name = f'Viktor {"Debugnov" if debug else "Produdnik"}'
         self.triggers = ['viktor', 'v!'] if not debug else ['deviktor', 'dv!']
         self.main_channel = 'CM376Q90F'  # test
         self.alerts_channel = 'alerts'  # #alerts
@@ -55,8 +55,8 @@ class Viktor:
         self.roles = self.read_roles()
 
         # Intro / help / command description area
-        intro = "Здравствуйте! I'm *Viktor* (:regional_indicator_v: for short).\nI can help do stuff for you, " \
-                "but you'll need to call my attention first with " \
+        intro = f"Здравствуйте! I'm *{self.bot_name}* (:regional_indicator_v: for short).\n" \
+                f"I can help do stuff for you, but you'll need to call my attention first with " \
                 f"*`{'`* or *`'.join(self.triggers)}`*\n Example: *`v! hello`*\nHere's what I can do:"
         avi_url = "https://ca.slack-edge.com/TM1A69HCM-ULV018W73-1a94c7650d97-512"
         avi_alt = '<record scratch> You\'re probably wondering how I ended up in this situation'
@@ -662,11 +662,17 @@ class Viktor:
                 # Probably not a proper language code?
                 return f'Unrecognized language code {target_lang}'
 
-        prev_msg = self.st.get_prev_msg_in_channel(channel, ts)
+        prev_msg = self.st.get_prev_msg_in_channel(channel, ts,
+                                                   callable_list=[self.translate_anything, 'text',
+                                                                  target_lang, False])
+        if isinstance(prev_msg, str):
+            # The callable above only gets called when we're working with a block
+            return self.translate_anything(prev_msg, target=target_lang)
+        else:
+            return prev_msg
 
-        return self.translate_anything(f'{target_lang} {prev_msg}')
-
-    def translate_anything(self, message: str, **kwargs) -> Union[str, List[dict]]:
+    def translate_anything(self, message: str, target: str = None,
+                           block_return: bool = True, **kwargs) -> Union[str, List[dict]]:
         """Attempts to translate any phrase into the target language defined at the beginning of the command"""
         match_pattern = kwargs.pop('match_pattern', None)
         if match_pattern is not None:
@@ -679,9 +685,13 @@ class Viktor:
             text = ' '.join(msg_split[1:])
         else:
             # Request came indirectly
-            msg_split = message.split()
-            target_lang = msg_split[0]
-            text = ' '.join(msg_split[1:])
+            if target is not None:
+                target_lang = target
+                text = message
+            else:
+                msg_split = message.split()
+                target_lang = msg_split[0]
+                text = ' '.join(msg_split[1:])
 
         if len(target_lang) != 2:
             # Probably not a proper language code?
@@ -691,17 +701,26 @@ class Viktor:
         #   as well as the confidence and the translation itself
         lang_dict = self.ling.translate_anything(text=text, target_lang=target_lang)
 
-        return [
-            self.bkb.make_context_section([
-                '*`{src_name} -> {tgt_name}`*\t src lang confidence:\t{conf:.1%}'.format(**lang_dict)
-            ]),
-            self.bkb.make_block_divider(),
-            self.bkb.make_block_section(lang_dict['translation'])
-        ]
+        if block_return:
+            return [
+                self.bkb.make_context_section([
+                    '*`{src_name} -> {tgt_name}`*\t src lang confidence:\t{conf:.1%}'.format(**lang_dict)
+                ]),
+                self.bkb.make_block_divider(),
+                self.bkb.make_block_section(lang_dict['translation'])
+            ]
+        else:
+            return lang_dict['translation']
 
-    def uwu_that(self, channel: str, ts: str, **kwargs) -> str:
+    def uwu_that(self, channel: str, ts: str, **kwargs) -> Union[str, List[dict]]:
         """Retrieves previous message and converts to UwU"""
-        return self.uwu(self.st.get_prev_msg_in_channel(channel, ts))
+
+        prev_msg = self.st.get_prev_msg_in_channel(channel, ts, callable_list=[self.uwu, 'text'])
+        if isinstance(prev_msg, str):
+            # The callable above only gets called when we're working with a block
+            return self.uwu(prev_msg)
+        else:
+            return prev_msg
 
     def uwu(self, msg: str, **kwargs) -> str:
         """uwu-fy a message"""
