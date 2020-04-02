@@ -1,8 +1,10 @@
 import os
+import json
 import signal
+import requests
 import traceback
 from random import randint
-from flask import Flask
+from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
 from .utils import Viktor
 
@@ -26,11 +28,56 @@ signal.signal(signal.SIGTERM, Bot.cleanup)
 message_events = []
 emoji_events = []
 user_events = []
+action_timestamps = []
 users_list = Bot.st.get_channel_members('CLWCPQ2TV')  # get users in general
 app = Flask(__name__)
 
 # Events API listener
 bot_events = SlackEventAdapter(key_dict['signing_secret'], "/viktor/vikapi/events", app)
+
+
+@app.route('/viktor/vikapi/slash', methods=['GET', 'POST'])
+def handle_slash():
+    """Handles a slash command"""
+    event_data = request.form
+    user = event_data['user_id']
+    channel = event_data['channel_id']
+    command = event_data['command']
+    text = event_data['text']
+
+    processed_cmd = command.split('-')[1]
+    Bot.st.handle_command({'message': processed_cmd, 'channel': channel})
+
+    # Send HTTP 200 response with an empty body so Slack knows we're done
+    return make_response('', 200)
+
+
+@app.route('/viktor/vikapi/actions', methods=['GET', 'POST'])
+def handle_action():
+    """Handle a response when a user clicks a button from Wizzy in Slack"""
+    event_data = json.loads(request.form["payload"])
+    user = event_data['user']['id']
+    channel = event_data['channel']['id']
+    actions = event_data['actions']
+    # Not sure if we'll ever receive more than one action?
+    action = actions[0]
+
+    # Send that info onwards to determine how to deal with it
+    if action['block_id'] not in action_timestamps:
+        Bot.process_incoming_action(user, channel, action)
+        action_timestamps.append(action['block_id'])
+    # Respond to the initial message and update it
+    update_dict = {
+        'replace_original': True,
+        'text': 'Thanks, {}!'
+    }
+    if event_data['container']['is_ephemeral']:
+        update_dict['response_type'] = 'ephemeral'
+    resp = requests.post(event_data['response_url'], json=update_dict,
+                         headers={'Content-Type': 'application/json'})
+
+    # Send HTTP 200 response with an empty body so Slack knows we're done
+    return make_response('', 200)
 
 
 @bot_events.on('reaction_added')

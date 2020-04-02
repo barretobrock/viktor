@@ -60,7 +60,7 @@ class Viktor:
                 f"I can help do stuff for you, but you'll need to call my attention first with " \
                 f"*`{'`* or *`'.join(self.triggers)}`*\n Example: *`v! hello`*\nHere's what I can do:"
         avi_url = "https://ca.slack-edge.com/TM1A69HCM-ULV018W73-1a94c7650d97-512"
-        avi_alt = '<record scratch> You\'re probably wondering how I ended up in this situation'
+        avi_alt = 'hewwo'
         cat_basic = 'basic'
         cat_useful = 'useful'
         cat_notsouseful = 'not so useful'
@@ -198,6 +198,12 @@ class Viktor:
                 'desc': 'Thank Viktor for something',
                 'value': [self.overly_polite, 'message'],
             },
+            r'^((button|btn)\s?game|bg)': {
+                'pattern': 'button game',
+                'cat': cat_notsouseful,
+                'desc': 'Play a game, win (or lose) LTITs',
+                'value': [self.button_game],
+            },
             r'^access': {
                 'pattern': 'access <literally-anything-else>',
                 'cat': cat_notsouseful,
@@ -320,6 +326,46 @@ class Viktor:
         ]
         self.st.message_main_channel(blocks=notify_block)
         sys.exit(0)
+
+    def process_incoming_action(self, user: str, channel: str, action: dict) -> Optional:
+        """Handles an incoming action (e.g., when a button is clicked)"""
+        if action['type'] == 'multi_static_select':
+            # Multiselect
+            selections = action['selected_options']
+            parsed_command = ''
+            for selection in selections:
+                value = selection['value'].replace('-', ' ')
+                if 'all' in value:
+                    # Only used for randpick/choose. Results in just the command 'rand(pick|choose)'
+                    #   If we're selecting all, we don't need to know any of the other selections.
+                    parsed_command = f'{value.split()[0]}'
+                    break
+                if parsed_command == '':
+                    # Put the entire first value into the parsed command (e.g., 'pick 1'
+                    parsed_command = f'{value}'
+                else:
+                    # Build on the already-made command by concatenating the number to the end
+                    #   e.g. 'pick 1' => 'pick 12'
+                    parsed_command += value.split()[1]
+
+        elif action['type'] == 'button':
+            # Normal button clicks just send a 'value' key in the payload dict
+            parsed_command = action['value'].replace('-', ' ')
+        else:
+            # Command not parsed
+            parsed_command = ''
+            # Probably should notify the user, but I'm not sure if Slack will attempt
+            #   to send requests multiple times if it doesn't get a response in time.
+            return None
+
+        if 'game' in parsed_command:
+            # Handle pick/randpick
+            game_value = parsed_command.split(' ')[1]
+            if game_value.isnumeric():
+                game_value = int(game_value) - 500
+                resp = self.update_user_ltips(channel, self.approved_users[0], f'-u <@{user}> {game_value}')
+                if resp is not None:
+                    self.st.send_message(channel, resp)
 
     # General support methods
     # ====================================================
@@ -651,6 +697,39 @@ class Viktor:
                     f.write(img.content)
                 self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
 
+    def button_game(self, **kwargs):
+        """Renders 5 buttons that the user clicks - one button has a value that awards them points"""
+        btn_blocks = []
+        btn_list = []  # Button info to be made into a button group
+        # Determine where to hide the value
+        items = list(range(1, 6))
+        emojis = [self.emoji_list[x] for x in np.random.choice(len(self.emoji_list), len(items), False)]
+        rand_val = randint(1, 5)
+        # Pick two places where negative values should go
+        neg_items = list(np.random.choice([x for x in items if x != rand_val], 2, False))
+        neg_values = []
+        for i in items:
+            if i == rand_val:
+                val = np.random.choice(50, 1)[0]
+                win = val
+            elif i in neg_items:
+                val = np.random.choice(range(-50, 0), 1)[0]
+                neg_values.append(val)
+            else:
+                val = 0
+            btn_blocks.append({'txt': f':{emojis[i - 1]}:', 'value': f'game-{val + 500}'})
+
+        blocks = [
+            self.bkb.make_context_section([
+                'Try your luck and guess which button is hiding the LTITs!!',
+                f'One value has `{win}` LTITs, two have {" and ".join([f"`{x}`" for x in neg_values])}'
+                f', repsectively. The rest are `0`.'
+            ]),
+            self.bkb.make_button_group(btn_blocks)
+        ]
+
+        return blocks
+
     def translate_that(self, channel: str, ts: str, message: str, **kwargs) -> Union[str, List[dict]]:
         """Retrieves previous message and tries to translate it into whatever the target language is"""
         match_pattern = kwargs.pop('match_pattern', None)
@@ -866,7 +945,7 @@ class Viktor:
         if match_pattern is not None:
             content = re.sub(match_pattern, '', message).strip()
         else:
-            return None
+            content = message
 
         if user not in self.approved_users:
             return 'LOL sorry, LTIT distributions are CEO-approved only'
