@@ -700,13 +700,13 @@ class Viktor:
     def button_game(self, **kwargs):
         """Renders 5 buttons that the user clicks - one button has a value that awards them points"""
         btn_blocks = []
-        btn_list = []  # Button info to be made into a button group
         # Determine where to hide the value
-        items = list(range(1, 6))
+        n_buttons = randint(5, 50)
+        items = list(range(1, n_buttons + 1))
         emojis = [self.emoji_list[x] for x in np.random.choice(len(self.emoji_list), len(items), False)]
-        rand_val = randint(1, 5)
+        rand_val = randint(1, n_buttons)
         # Pick two places where negative values should go
-        neg_items = list(np.random.choice([x for x in items if x != rand_val], 2, False))
+        neg_items = list(np.random.choice([x for x in items if x != rand_val], int(n_buttons/2), False))
         neg_values = []
         for i in items:
             if i == rand_val:
@@ -722,8 +722,8 @@ class Viktor:
         blocks = [
             self.bkb.make_context_section([
                 'Try your luck and guess which button is hiding the LTITs!!',
-                f'One value has `{win}` LTITs, two have {" and ".join([f"`{x}`" for x in neg_values])}'
-                f', repsectively. The rest are `0`.'
+                f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
+                f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.'
             ]),
             self.bkb.make_button_group(btn_blocks)
         ]
