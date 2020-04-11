@@ -2,7 +2,6 @@ import os
 import json
 import signal
 import requests
-import traceback
 from random import randint
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
@@ -40,13 +39,8 @@ bot_events = SlackEventAdapter(key_dict['signing_secret'], "/viktor/vikapi/event
 def handle_slash():
     """Handles a slash command"""
     event_data = request.form
-    user = event_data['user_id']
-    channel = event_data['channel_id']
-    command = event_data['command']
-    text = event_data['text']
-
-    processed_cmd = command.split('-')[1]
-    Bot.st.handle_command({'message': processed_cmd, 'channel': channel})
+    # Handle the command
+    Bot.st.parse_slash_command(event_data)
 
     # Send HTTP 200 response with an empty body so Slack knows we're done
     return make_response('', 200)
@@ -80,8 +74,62 @@ def handle_action():
     return make_response('', 200)
 
 
+@app.route("/viktor/cron/new_emojis", methods=['POST'])
+def handle_cron_new_emojis():
+    """Check for newly uploaded emojis (triggered by cron task that sends POST req every 10 mins)"""
+    # Check emojis uploaded (every 10 mins)
+    if len(Bot.new_emoji_set) > 0:
+        # Go about notifying channel of newly uploaded emojis
+        emojis = [f':{x}:' for x in list(Bot.new_emoji_set)]
+        emoji_str = ''
+        for i in range(0, len(emojis), 10):
+            emoji_str += f"{''.join(emojis[i:i + 10])}\n"
+        msg_block = [
+            Bot.bkb.make_context_section('Incoming emojis that were added in the last 10 min!'),
+        ]
+        Bot.st.send_message(Bot.emoji_channel, '', blocks=msg_block)
+        Bot.st.send_message(Bot.emoji_channel, emoji_str)
+        # Reset list of added emojis to an empty set
+        Bot.new_emoji_set = set()
+
+    return make_response('', 200)
+
+
+@app.route("/viktor/cron/profile_update", methods=['POST'])
+def handle_cron_profile_update():
+    """Check for newly updated profile elements (triggered by cron task that sends POST req every 10 mins)"""
+    # Check updated profile (every 10 mins)
+    if len(Bot.user_updates_dict) > 0:
+        # Go about notifying channel of newly uploaded emojis
+        for uid, change_dict in Bot.user_updates_dict.items():
+            # we'll currently report on avatar, display name, name, title and status changes.
+            changes_txt = '*`{display_name}`*\t\t*`{real_name}`*\n:q:{title}:q:\n{status_emoji} {status_text}'
+            msg_block = [
+                Bot.bkb.make_context_section(f'<@{uid}> changed their profile info recently!'),
+                Bot.bkb.make_block_divider()
+            ]
+            # Process new/old data
+            for data in ['old', 'new']:
+                transition = 'from' if data == 'old' else 'to'
+                avi_url = change_dict[data]['avi']
+                avi_alt = f'{transition} pic'
+                msg_block += [
+                    Bot.bkb.make_context_section(f'{transition} this...'),
+                    Bot.bkb.make_block_section(changes_txt.format(**change_dict[data]),
+                                               accessory=Bot.bkb.make_image_accessory(avi_url, avi_alt))
+                ]
+
+            Bot.st.send_message(Bot.general_channel, '', blocks=msg_block)
+            # Make sure the current dict is then updated to reflect changes we've reported
+            Bot.users_dict[uid] = change_dict['new']
+        # Reset dict of user profile changes to an empty dict
+        Bot.user_updates_dict = {}
+
+    return make_response('', 200)
+
+
 @bot_events.on('reaction_added')
-def reaction(event_data):
+def reaction(event_data: dict):
     event = event_data['event']
     if event['user'] not in [Bot.bot_id, Bot.user_id]:
         # Keep from reacting to own reaction
@@ -99,80 +147,31 @@ def reaction(event_data):
 
 
 @bot_events.on('message')
-def scan_message(event_data):
-    event = event_data['event']
-    # Pass event stuff onward to app
-    msg_packet = None
-    if event['type'] == 'message' and "subtype" not in event:
-        trigger, message, raw_message = Bot.st.parse_direct_mention(event['text'])
-        if trigger in Bot.triggers:
-            # Build a message hash
-            msg_hash = f'{event["channel"]}_{event["ts"]}'
-            if msg_hash not in message_events:
-                message_events.append(msg_hash)
-                msg_packet = {
-                    'message': message.strip(),
-                    'raw_message': raw_message.strip()
-                }
-                # Add in all the other stuff
-                msg_packet.update(event)
-
-    if msg_packet is not None:
-        try:
-            Bot.st.handle_command(msg_packet)
-        except Exception as e:
-            if not isinstance(e, RuntimeError):
-                exception_msg = '{}: {}'.format(e.__class__.__name__, e)
-                if Bot.debug:
-                    blocks = [
-                        Bot.bkb.make_context_section("Exception occurred: \n```{}```".format(exception_msg)),
-                        Bot.bkb.make_block_divider(),
-                        Bot.bkb.make_context_section(f'```{traceback.format_exc()}```')
-                    ]
-                    Bot.st.send_message(msg_packet['channel'], message='', blocks=blocks)
-                else:
-                    Bot.st.send_message(msg_packet['channel'], f"Exception occurred: \n```{exception_msg}```")
+def scan_message(event_data: dict):
+    Bot.st.parse_event(event_data)
 
 
 @bot_events.on('emoji_changed')
 def notify_new_emojis(event_data):
     event = event_data['event']
     # Make a post about a new emoji being added in the #emoji_suggestions channel
-    emoji_chan = 'CLWCPQ2TV'
     if event['subtype'] == 'add':
         emoji = event['name']
-        if emoji not in emoji_events:
-            # Add it for future checks
-            emoji_events.append(emoji)
-            Bot.st.send_message(emoji_chan, f'New emoji added: :{emoji}:')
+        Bot.new_emoji_set.add(emoji)
 
 
 @bot_events.on('user_change')
 def notify_new_statuses(event_data):
+    """Triggered when a user updates their profile info. Gets saved to global dict
+    where we then report it in #general"""
     event = event_data['event']
-    # Post to #general
-    general_chan = 'CMEND3W3H'
     user_info = event['user']
     uid = user_info['id']
-    if uid in [x['id'] for x in users_list]:
-        # User's in #general
-        # Get user's index in our list of dicts
-        user_dict_idx = next((idx for (idx, d) in enumerate(users_list) if d['id'] == uid), None)
-        if user_dict_idx is None:
-            return None
+    if uid in Bot.users_dict.keys():
         # Get what info we've already stored on the user
-        user_dict = users_list[user_dict_idx]
-        if 'profile' in user_info.keys():
-            profile_info = user_info['profile']
-            status = profile_info['status_text']
-            emoji = profile_info.get('status_emoji', '')
-            status_hash = f'{emoji} {status}'
-            prev_status_hash = f'{user_dict["status_emoji"]} {user_dict["status_text"]}'
-            if status_hash != prev_status_hash:
-                user_dict['status_emoji'] = emoji
-                user_dict['status_text'] = status
-                # Send updated dict to the list of user dicts
-                users_list[user_dict_idx] = user_dict
-                # Message channel about status update
-                msg = f'<@{uid}> updated their status: {status_hash}'
-                Bot.st.send_message(general_chan, msg)
+        current_user_dict = Bot.users_dict[uid]
+        # Get the user's newly updated dict
+        new_user_dict = Bot.st.clean_user_info(user_info)
+
+        # Add updated to our updates dict
+        Bot.user_updates_dict[uid] = {k: v for k, v in zip(['old', 'new'], [current_user_dict, new_user_dict])}

@@ -32,6 +32,8 @@ class Viktor:
         self.bot_name = f'Viktor {"Debugnov" if debug else "Produdnik"}'
         self.triggers = ['viktor', 'v!'] if not debug else ['deviktor', 'dv!']
         self.main_channel = 'CM376Q90F'  # test
+        self.emoji_channel = 'CLWCPQ2TV'  # emoji_suggestions
+        self.general_channel = 'CMEND3W3H'  # general
         self.alerts_channel = 'alerts'  # #alerts
         self.approved_users = ['UM35HE6R5', 'UM3E3G72S']
         self.bkb = BlockKitBuilder()
@@ -317,6 +319,15 @@ class Viktor:
         commands[r'^help']['value'] = self.st.build_help_block(intro, avi_url, avi_alt)
         # Update the command dict in SlackBotBase
         self.st.update_commands(commands)
+
+        # These data structures will help to better time the dissemination of notifications
+        #   (e.g., instead of notifying for every time a new emoji is updated,
+        #   check every x mins for a change in the data structure that would hold newly uploaded emojis)
+        self.new_emoji_set = set()
+        # Build a dictionary of all users in the workspace (for determining changes in name, status)
+        self.users_dict = {x['id']: x for x in self.st.get_channel_members('CM3E3E82J', True)}
+        # This dictionary is for tracking updates to these dicts
+        self.user_updates_dict = {}
 
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
@@ -701,7 +712,7 @@ class Viktor:
         """Renders 5 buttons that the user clicks - one button has a value that awards them points"""
         btn_blocks = []
         # Determine where to hide the value
-        n_buttons = randint(5, 50)
+        n_buttons = randint(5, 16)
         items = list(range(1, n_buttons + 1))
         emojis = [self.emoji_list[x] for x in np.random.choice(len(self.emoji_list), len(items), False)]
         rand_val = randint(1, n_buttons)
