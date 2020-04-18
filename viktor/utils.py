@@ -69,6 +69,7 @@ class Viktor:
         cat_org = 'org'
         cat_lang = 'language'
         cmd_categories = [cat_basic, cat_useful, cat_notsouseful, cat_lang, cat_org]
+
         commands = {
             r'^help': {
                 'pattern': 'help',
@@ -169,6 +170,14 @@ class Viktor:
                 'desc': 'Generates an insult. The optional group name corresponds to the column name '
                         'of the insults in Viktor\'s spreadsheet',
                 'value': [self.insult, 'message'],
+            },
+            r'^phrases?': {
+                'pattern': 'phrase(s) [-(group|g) <group>, -n <number-of-cycles>]',
+                'cat': cat_notsouseful,
+                'desc': 'Generates an phrase from a collection of words. The optional group name '
+                        'corresponds to the cluster of column names in the "phrases" tab '
+                        'in Viktor\'s spreadsheet',
+                'value': [self.phrase_generator, 'message'],
             },
             r'^compliment': {
                 'pattern': 'compliment <thing|person> [-<group>]',
@@ -303,7 +312,6 @@ class Viktor:
                 'value': [self.ling.get_etymology, 'message']
             }
         }
-
         # Initate the bot, which comes with common tools for interacting with Slack's API
         self.st = SlackBotBase(log_name, triggers=self.triggers, team='orbitalkettlerelay',
                                main_channel=self.main_channel, xoxp_token=xoxp_token, xoxb_token=xoxb_token,
@@ -657,6 +665,48 @@ class Viktor:
             return "You aint nothin but a {}".format(' '.join(insults))
         else:
             return "{} aint nothin but a {}".format(target, ' '.join(insults))
+
+    def phrase_generator(self, message: str, **kwargs) -> str:
+        """Generates a phrase based on a table of work fragments"""
+        # Get the group of phrases we're going to work with
+        phrase_group = self.st.get_flag_from_command(message, flags=['group', 'g'], default='south')
+        # Number of time to cycle through phrase generation
+        n_times = self.st.get_flag_from_command(message, flags=['n'], default='1')
+        n_times = int(n_times) if n_times.isnumeric() else 1
+
+        # Choose the table to use
+        phrase_df = self.gs_dict['phrases']
+        cols = phrase_df.columns.tolist()
+        phrase_group_dict = self._build_flag_dict(cols)
+
+        if phrase_group not in phrase_group_dict.keys():
+            return f'Cannot find set `{phrase_group}` in the `insults` sheet. ' \
+                   f'Available sets: `{"`, `".join(phrase_group_dict.keys())}`'
+
+        def phrase_builder(df: pd.DataFrame, phrase_cols: List[str]) -> List[str]:
+            """Builds the phrase"""
+            phrase_list = []
+            for phrase_part in sorted(phrase_cols):
+                part = df[phrase_part].replace('', np.NaN).dropna().unique().tolist()
+                if len(part) > 1:
+                    # Choose part from multiple parts
+                    txt = part[randint(0, len(part) - 1)]
+                else:
+                    txt = part[0]
+                phrase_list.append(txt.strip())
+            return phrase_list
+
+        phrase_cols = phrase_group_dict[phrase_group]
+        phrase = []
+        for i in range(n_times):
+            if i == n_times - 1 and any(['joiner' in x for x in phrase_cols]):
+                # Last iteration. Remove the joiner and add a period
+                phrase += phrase_builder(phrase_df, phrase_cols)[:-1]
+            else:
+                phrase += phrase_builder(phrase_df, phrase_cols)
+
+        phrase_txt = '. '.join([x.strip().capitalize() for x in f'{" ".join(phrase)}'.split('.')])
+        return f'{phrase_txt}.'
 
     def compliment(self, message: str, user: str, **kwargs) -> str:
         """Insults the user at their request"""
