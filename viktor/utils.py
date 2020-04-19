@@ -440,16 +440,6 @@ class Viktor:
                    '```{}```'.format(len(msgs), self.st.df_to_slack_table(res_df))
         return response
 
-    def get_user_by_id(self, user_id: str, user_list: List[dict]) -> dict:
-        """Returns a dictionary of player info that has a matching 'id' value in a list of player dicts"""
-        user_idx = self.get_user_index_by_id(user_id, user_list)
-        return user_list[user_idx]
-
-    @staticmethod
-    def get_user_index_by_id(user_id: str, user_list: List[dict]) -> int:
-        """Returns the index of a player in a list of players that has a matching 'id' value"""
-        return user_list.index([x for x in user_list if x['id'] == user_id][0])
-
     def refresh_emojis(self):
         """Refreshes the list of emojis"""
         self.emoji_list = self._get_emojis()
@@ -545,14 +535,43 @@ class Viktor:
         """Gets the server time"""
         return f'The server time is `{dt.today():%F %T}`'
 
-    @staticmethod
-    def wfh_epoch() -> str:
+    def wfh_epoch(self) -> List[dict]:
         """Calculates WFH epoch time"""
         wfh_epoch = pd.datetime(year=2020, month=3, day=3, hour=19, minute=15)
         now = pd.datetime.now()
         diff = (now - wfh_epoch)
+        wfh_secs = diff.total_seconds()
+        strange_units = {
+            'dog years_2': (wfh_secs / (60 * 60 * 24)) / 52,
+            'hollow months_2': wfh_secs / (60 * 60 * 24 * 29),
+            'fortnights_1': wfh_secs / (60 * 60 * 24 * 7 * 2),
+            'kilowarhols_1': wfh_secs / (60 * 15000),
+            'weeks_1': wfh_secs / (60 * 60 * 24 * 7),
+            'sols_1': wfh_secs / (60 * 60 * 24 + 2375),
+            'microcenturies_0': wfh_secs / (52 * 60 + 35.76),
+            'Kermits_1': wfh_secs / 60 / 14.4,
+            'moments_0': wfh_secs / 90,
+            'millidays_2': wfh_secs / 86.4,
+            'microfortnights_2': wfh_secs * 1.2096,
+        }
 
-        return f'Current WFH epoch time is `{diff.total_seconds():.0f}`. \n ({diff}) '
+        units = []
+        for k, v in strange_units.items():
+            unit, decimals = k.split('_')
+            decimals = int(decimals)
+            base_txt = f',.{decimals}f'
+            txt = '`{{:<20}} {{:>15{}}}`'.format(base_txt).format(f'{unit.title()}:', v)
+            units.append(txt)
+
+        unit_txt = '\n'.join(units)
+        return [
+            self.bkb.make_context_section('WFH Epoch'),
+            self.bkb.make_block_section(
+                f'Current WFH epoch time is *`{wfh_secs:.0f}`*.'
+                f'\n ({diff})',
+            ),
+            self.bkb.make_context_section(f'{unit_txt}')
+        ]
 
     # Misc. methods
     # ====================================================
