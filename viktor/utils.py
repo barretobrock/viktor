@@ -156,7 +156,7 @@ class Viktor:
                 'value': [self.get_channel_stats, 'channel'],
             },
             r'^(ag|acro[-]?guess)': {
-                'pattern': '(acro-guess|ag) <acronym> [-<group>]',
+                'pattern': '(acro-guess|ag) <acronym> [-(group|g) <group>, -n <guess-n-times>]',
                 'cat': cat_notsouseful,
                 'desc': 'There are RBNs of TLAs at OKR. This tries RRRRH to guess WTF they mean IRL. '
                         '\n\t\t\tThe optional group name corresponds to the column name '
@@ -179,7 +179,7 @@ class Viktor:
                 'value': [self.phrase_generator, 'message'],
             },
             r'^compliment': {
-                'pattern': 'compliment <thing|person> [-<group>]',
+                'pattern': 'compliment <thing|person> [-(group|g) <group>]',
                 'cat': cat_notsouseful,
                 'desc': 'Generates a :q:compliment:q:. The optional group name corresponds to the column name '
                         'of the compliments in Viktor\'s spreadsheet',
@@ -195,7 +195,7 @@ class Viktor:
                 'pattern': 'refresh emojis',
                 'cat': cat_useful,
                 'desc': 'Makes Viktor aware of emojis that have been uploaded since his last reboot.',
-                'value': [self._get_emojis],
+                'value': [self.refresh_emojis],
             },
             r'^uwu': {
                 'pattern': 'uwu [-l <1 or 2>] <text_to_uwu>',
@@ -449,6 +449,10 @@ class Viktor:
     def get_user_index_by_id(user_id: str, user_list: List[dict]) -> int:
         """Returns the index of a player in a list of players that has a matching 'id' value"""
         return user_list.index([x for x in user_list if x['id'] == user_id][0])
+
+    def refresh_emojis(self):
+        """Refreshes the list of emojis"""
+        self.emoji_list = self._get_emojis()
 
     def _get_emojis(self) -> List[str]:
         """Collect emojis in workspace, remove those that are parts of a larger emoji"""

@@ -31,6 +31,8 @@ class PhraseBuilders:
                     group_dict[k].append(col)
                 else:
                     group_dict[k] = [col]
+            else:
+                group_dict[col] = [col]
         return group_dict
 
     @staticmethod
@@ -71,7 +73,7 @@ class PhraseBuilders:
         # Parse the group of acronyms the user wants to work with
         acronym_group = self.st.get_flag_from_command(message, flags=['group', 'g'], default='standard')
         # Number of guessed to make
-        n_times = self.st.get_flag_from_command(message, flags=['n'], default='1')
+        n_times = self.st.get_flag_from_command(message, flags=['n'], default='3')
         n_times = int(n_times) if n_times.isnumeric() else 3
         # Choose the acronym list to use
         cols = acro_df.columns.tolist()
@@ -192,7 +194,7 @@ class PhraseBuilders:
         """Generates a phrase based on a table of work fragments"""
         message_split = message.split()
         resp = self._phrase_action_handler(df, message_split[0], message, 'phrases', 'south')
-        return f'{resp}.'
+        return f'{resp}'
 
     def compliment(self, df: pd.DataFrame, message: str, user: str) -> str:
         """Insults the user at their request"""
