@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import re
 import sys
-import string
 import requests
 import pandas as pd
 import numpy as np
@@ -11,6 +10,7 @@ from datetime import datetime as dt
 from random import randint
 from slacktools import SlackBotBase, GSheetReader, BlockKitBuilder
 from .linguistics import Linguistics
+from .phrases import PhraseBuilders
 from ._version import get_versions
 
 
@@ -38,7 +38,6 @@ class Viktor:
         self.approved_users = ['UM35HE6R5', 'UM3E3G72S']
         self.bkb = BlockKitBuilder()
         self.ling = Linguistics()
-
         # Bot version stuff
         version_dict = get_versions()
         self.version = version_dict['version']
@@ -51,9 +50,9 @@ class Viktor:
         # GSheets stuff
         self.gs_dict = {}
         self.viktor_sheet = ss_key
-        self.onboarding_key = onboarding_key
         self.viktor_sheet_link = f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
-        self.onboarding_link = f'https://docs.google.com/document/d/{self.onboarding_key}/edit?usp=sharing'
+        self.onboarding_link = f'https://docs.google.com/document/d/{onboarding_key}/edit?usp=sharing'
+
         self._read_in_sheets()
         self.roles = self.read_roles()
 
@@ -117,13 +116,13 @@ class Viktor:
                 'pattern': 'translate that <target_lang_code>',
                 'cat': cat_lang,
                 'desc': 'Translate the text immediately above this command.',
-                'value': [self.translate_that, 'channel', 'ts', 'message'],
+                'value': [self.translate_that, 'channel', 'ts', 'message', 'match_pattern'],
             },
             r'^translate (in)?to': {
                 'pattern': 'translate to <target_lang_code>',
                 'cat': cat_lang,
                 'desc': 'Translates the text to the target language',
-                'value': [self.translate_anything, 'message'],
+                'value': [self.translate_anything, 'message', 'match_pattern'],
             },
             r'^uwu that$': {
                 'pattern': 'uwu that',
@@ -142,7 +141,7 @@ class Viktor:
                 'cat': cat_org,
                 'desc': 'Updates OKR roles of user (or other user). Useful during a quick reorg. '
                         '\n\t\t\t_NOTE: You only have to tag a user if it\'s not you._',
-                'value': [self.update_roles, 'user', 'channel', 'raw_message'],
+                'value': [self.update_roles, 'user', 'channel', 'raw_message', 'match_pattern'],
             },
             r'^show my (role|doo[td]ie)$': {
                 'pattern': 'show my (role|doo[td]ie)',
@@ -165,7 +164,7 @@ class Viktor:
                 'value': [self.guess_acronym, 'message'],
             },
             r'^ins[ul]{2}t': {
-                'pattern': 'insult <thing|person> [-<group>]',
+                'pattern': 'insult <me|thing|person> [-(group|g) <group>]',
                 'cat': cat_notsouseful,
                 'desc': 'Generates an insult. The optional group name corresponds to the column name '
                         'of the insults in Viktor\'s spreadsheet',
@@ -190,7 +189,7 @@ class Viktor:
                 'pattern': 'emoji[s] like <regex-pattern>',
                 'cat': cat_useful,
                 'desc': 'Get emojis matching the regex pattern',
-                'value': [self.get_emojis_like, 'message'],
+                'value': [self.get_emojis_like, 'match_pattern', 'message'],
             },
             r'^refresh emojis$': {
                 'pattern': 'refresh emojis',
@@ -226,7 +225,7 @@ class Viktor:
                 'pattern': 'quote me <thing-to-quote>',
                 'cat': cat_notsouseful,
                 'desc': 'Turns your quote into letter emojis',
-                'value': [self.quote_me, 'message'],
+                'value': [self.quote_me, 'message', 'match_pattern'],
             },
             r'^refresh sheets$': {
                 'pattern': 'refresh sheets',
@@ -261,13 +260,13 @@ class Viktor:
                 'pattern': '(update level|level up) -u <user>',
                 'cat': cat_org,
                 'desc': 'Accesses an employee\'s LevelUp registry and increments their level',
-                'value': [self.update_user_level, 'channel', 'user', 'message']
+                'value': [self.update_user_level, 'channel', 'user', 'message', 'match_pattern']
             },
             r'^ltits': {
                 'pattern': 'ltits -u <user> <number>',
                 'cat': cat_org,
                 'desc': 'Distribute or withdraw LTITs from an employee\'s account',
-                'value': [self.update_user_ltips, 'channel', 'user', 'message']
+                'value': [self.update_user_ltips, 'channel', 'user', 'message', 'match_pattern']
             },
             r'^show (my )?perk[s]?': {
                 'pattern': 'show [my] perk(s)',
@@ -312,7 +311,7 @@ class Viktor:
                 'value': [self.ling.get_etymology, 'message']
             }
         }
-        # Initate the bot, which comes with common tools for interacting with Slack's API
+        # Initiate the bot, which comes with common tools for interacting with Slack's API
         self.st = SlackBotBase(log_name, triggers=self.triggers, team='orbitalkettlerelay',
                                main_channel=self.main_channel, xoxp_token=xoxp_token, xoxb_token=xoxb_token,
                                commands=commands, cmd_categories=cmd_categories)
@@ -320,6 +319,7 @@ class Viktor:
         self.user_id = self.st.user_id
         self.bot = self.st.bot
         self.emoji_list = self._get_emojis()
+        self.pb = PhraseBuilders(self.st)
 
         self.st.message_main_channel(blocks=self.bootup_msg)
 
@@ -372,7 +372,6 @@ class Viktor:
             parsed_command = action['value'].replace('-', ' ')
         else:
             # Command not parsed
-            parsed_command = ''
             # Probably should notify the user, but I'm not sure if Slack will attempt
             #   to send requests multiple times if it doesn't get a response in time.
             return None
@@ -388,7 +387,7 @@ class Viktor:
 
     # General support methods
     # ====================================================
-    def get_channel_stats(self, channel: str, **kwargs) -> str:
+    def get_channel_stats(self, channel: str) -> str:
         """Collects posting stats for a given channel"""
         msgs = self.st.get_channel_history(channel, limit=1000)
         results = {}
@@ -451,22 +450,18 @@ class Viktor:
         """Returns the index of a player in a list of players that has a matching 'id' value"""
         return user_list.index([x for x in user_list if x['id'] == user_id][0])
 
-    def _get_emojis(self, **kwargs) -> List[str]:
+    def _get_emojis(self) -> List[str]:
         """Collect emojis in workspace, remove those that are parts of a larger emoji"""
         emojis = list(self.st.get_emojis().keys())
         regex = re.compile('.*[0-9][-_][0-9].*')
         matches = list(filter(regex.match, emojis))
         return [x for x in emojis if x not in matches]
 
-    def get_emojis_like(self, message: str, max_res: int = 500, **kwargs) -> str:
+    def get_emojis_like(self, match_pattern: str, message: str, max_res: int = 500) -> str:
         """Gets emojis matching in the system that match a given regex pattern"""
 
-        # Parse out the initial command
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            ptrn = re.sub(match_pattern, '', message).strip()
-        else:
-            return 'Message didn\'t match expected syntax.'
+        # Parse out the initial command via regex
+        ptrn = re.sub(match_pattern, '', message).strip()
 
         if ptrn != '':
             # We've got a pattern to use
@@ -499,40 +494,10 @@ class Viktor:
                 sheet.title: gs.get_sheet(sheet.title)
             })
 
-    def refresh_sheets(self, **kwargs) -> str:
+    def refresh_sheets(self) -> str:
         """Refreshes Viktor's Google Sheet"""
         self._read_in_sheets()
         return 'Sheets have been refreshed! `{}`'.format(','.join(self.gs_dict.keys()))
-
-    @staticmethod
-    def _grab_flag(msg_split: List[str], default_flag: str) -> Tuple[str, str]:
-        """Collects flag from message. If no flag, uses a default"""
-        # Check if flag is at the end of the msg
-        flag = msg_split[-1]
-        if '-' in flag:
-            flag = flag.replace('-', '')
-            # Skip the last part of the message, as that's the flag
-            target = ' '.join(msg_split[1:-1])
-        else:
-            flag = default_flag
-            # Get the rest of the message
-            target = ' '.join(msg_split[1:])
-        return flag, target
-
-    @staticmethod
-    def _build_flag_dict(col_list: List[str]) -> dict:
-        """Builds a dictionary of the columns for a particular sheet that
-            contains several ordered columns grouped under a central theme"""
-        # Parse the columns into flags and order
-        flag_dict = {}
-        for col in col_list:
-            if '_' in col:
-                k, v = col.split('_')
-                if k in flag_dict.keys():
-                    flag_dict[k].append(col)
-                else:
-                    flag_dict[k] = [col]
-        return flag_dict
 
     # Basic / Static standalone methods
     # ====================================================
@@ -550,7 +515,7 @@ class Viktor:
         return sarcastic_reponses[randint(0, len(sarcastic_reponses) - 1)]
 
     @staticmethod
-    def giggle(**kwargs) -> str:
+    def giggle() -> str:
         """Laughs, uncontrollably at times"""
         # Count the 'no's
         laugh_cycles = randint(1, 500)
@@ -558,7 +523,7 @@ class Viktor:
         return response
 
     @staticmethod
-    def overly_polite(message: str, **kwargs) -> str:
+    def overly_polite(message: str) -> str:
         """Responds to 'no, thank you' with an extra 'no' """
         # Count the 'no's
         no_cnt = message.count('no')
@@ -567,17 +532,17 @@ class Viktor:
         return response
 
     @staticmethod
-    def access_something(**kwargs) -> str:
+    def access_something() -> str:
         """Return random number of ah-ah-ah emojis (Jurassic Park movie reference)"""
         return ''.join([':ah-ah-ah:'] * randint(5, 50))
 
     @staticmethod
-    def get_time(**kwargs) -> str:
+    def get_time() -> str:
         """Gets the server time"""
         return f'The server time is `{dt.today():%F %T}`'
 
     @staticmethod
-    def wfh_epoch(**kwargs) -> str:
+    def wfh_epoch() -> str:
         """Calculates WFH epoch time"""
         wfh_epoch = pd.datetime(year=2020, month=3, day=3, hour=19, minute=15)
         now = pd.datetime.now()
@@ -587,168 +552,15 @@ class Viktor:
 
     # Misc. methods
     # ====================================================
-    def sh_response(self, **kwargs) -> str:
+    def sh_response(self) -> str:
         """Responds to SHs"""
         resp_df = self.gs_dict['responses']
         responses = resp_df['responses_list'].unique().tolist()
         return responses[randint(0, len(responses) - 1)]
 
-    def guess_acronym(self, message: str, **kwargs) -> str:
-        """Tries to guess an acronym from a message"""
-        message_split = message.split()
-        if len(message_split) <= 1:
-            return "I can't work like this! I need a real acronym!!:ragetype:"
-        # We can work with this
-        acronym = message_split[1]
-        if len(message_split) >= 3:
-            flag = message_split[2].replace('-', '')
-        else:
-            flag = 'standard'
-        # clean of any punctuation (or non-letters)
-        acronym = re.sub(r'\W', '', acronym)
-
-        # Choose the acronym list to use
-        acro_df = self.gs_dict['acronyms']
-        cols = acro_df.columns.tolist()
-        if flag not in cols:
-            return 'Cannot find set `{}` in the `acronyms` sheet. ' \
-                   'Available sets: `{}`'.format(flag, ','.join(cols))
-        words = acro_df.loc[~acro_df[flag].isnull(), flag].unique().tolist()
-
-        # Put the words into a dictionary, classified by first letter
-        a2z = string.ascii_lowercase
-        word_dict = {k: [] for k in a2z}
-        for word in words:
-            word = word.replace('\n', '')
-            if len(word) > 1:
-                word_dict[word[0].lower()].append(word.lower())
-
-        # Build out the real acryonym meaning
-        guesses = []
-        for guess in range(3):
-            meaning = []
-            for letter in list(acronym):
-                if letter.isalpha():
-                    word_list = word_dict[letter]
-                    meaning.append(word_list[randint(0, len(word_list) - 1)])
-                else:
-                    meaning.append(letter)
-            guesses.append(' '.join(list(map(str.title, meaning))))
-
-        return ':robot-face: Here are my guesses for *{}*!\n {}'.format(acronym.upper(),
-                                                                        '\n_OR_\n'.join(guesses))
-
-    def insult(self, message: str, **kwargs) -> str:
-        """Insults the user at their request"""
-        message_split = message.split()
-        if len(message_split) <= 1:
-            return "I can't work like this! I need something to insult!!:ragetype:"
-
-        # We can work with this
-        flag, target = self._grab_flag(message_split, 'standard')
-
-        # Choose the acronym list to use
-        insult_df = self.gs_dict['insults']
-        cols = insult_df.columns.tolist()
-        flag_dict = self._build_flag_dict(cols)
-
-        if flag not in flag_dict.keys():
-            return 'Cannot find set `{}` in the `insults` sheet. ' \
-                   'Available sets: `{}`'.format(flag, ','.join(flag_dict.keys()))
-        insults = []
-        for insult_part in sorted(flag_dict[flag]):
-            part_series = insult_df[insult_part].replace('', np.NaN).dropna().unique()
-            part = part_series.tolist()
-            insults.append(part[randint(0, len(part) - 1)])
-
-        if target.lower() == 'me':
-            return "You aint nothin but a {}".format(' '.join(insults))
-        else:
-            return "{} aint nothin but a {}".format(target, ' '.join(insults))
-
-    def phrase_generator(self, message: str, **kwargs) -> str:
-        """Generates a phrase based on a table of work fragments"""
-        # Get the group of phrases we're going to work with
-        phrase_group = self.st.get_flag_from_command(message, flags=['group', 'g'], default='south')
-        # Number of time to cycle through phrase generation
-        n_times = self.st.get_flag_from_command(message, flags=['n'], default='1')
-        n_times = int(n_times) if n_times.isnumeric() else 1
-
-        # Choose the table to use
-        phrase_df = self.gs_dict['phrases']
-        cols = phrase_df.columns.tolist()
-        phrase_group_dict = self._build_flag_dict(cols)
-
-        if phrase_group not in phrase_group_dict.keys():
-            return f'Cannot find set `{phrase_group}` in the `insults` sheet. ' \
-                   f'Available sets: `{"`, `".join(phrase_group_dict.keys())}`'
-
-        def phrase_builder(df: pd.DataFrame, phrase_cols: List[str]) -> List[str]:
-            """Builds the phrase"""
-            phrase_list = []
-            for phrase_part in sorted(phrase_cols):
-                part = df[phrase_part].replace('', np.NaN).dropna().unique().tolist()
-                if len(part) > 1:
-                    # Choose part from multiple parts
-                    txt = part[randint(0, len(part) - 1)]
-                else:
-                    txt = part[0]
-                phrase_list.append(txt.strip())
-            return phrase_list
-
-        phrase_cols = phrase_group_dict[phrase_group]
-        phrase = []
-        for i in range(n_times):
-            if i == n_times - 1 and any(['joiner' in x for x in phrase_cols]):
-                # Last iteration. Remove the joiner and add a period
-                phrase += phrase_builder(phrase_df, phrase_cols)[:-1]
-            else:
-                phrase += phrase_builder(phrase_df, phrase_cols)
-
-        phrase_txt = '. '.join([x.strip().capitalize() for x in f'{" ".join(phrase)}'.split('.')])
-        return f'{phrase_txt}.'
-
-    def compliment(self, message: str, user: str, **kwargs) -> str:
-        """Insults the user at their request"""
-        message_split = message.split()
-        if len(message_split) <= 1:
-            return "I can't work like this! I need something to compliment!!:ragetype:"
-
-        # We can work with this
-        flag, target = self._grab_flag(message_split, 'std')
-
-        # Choose the acronym list to use
-        compliment_df = self.gs_dict['compliments']
-        cols = compliment_df.columns.tolist()
-        flag_dict = self._build_flag_dict(cols)
-
-        if flag not in flag_dict.keys():
-            return 'Cannot find set `{}` in the `compliments` sheet. ' \
-                   'Available sets: `{}`'.format(flag, ','.join(flag_dict.keys()))
-        compliments = []
-        for compliment_part in sorted(flag_dict[flag]):
-            part_series = compliment_df[compliment_part].replace('', np.NaN).dropna().unique()
-            part = part_series.tolist()
-            txt = part[randint(0, len(part) - 1)]
-            if any([x.isalnum() for x in list(txt)]):
-                # If there are any alphanumerics in the string, append (space will be added)
-                compliments.append(txt)
-            else:
-                # txt is likely just a bunch of punctuation. Try to combine with the previous item in the list
-                if len(compliments) > 0:
-                    compliments[-1] += txt
-                else:
-                    # Just append it. We tried.
-                    compliments.append(txt)
-
-        if target == 'me':
-            return "{} Viktor.".format(' '.join(compliments))
-        else:
-            return "Dear {}, {} <@{}>".format(target, ' '.join(compliments), user)
-
-    def inspirational(self, channel: str, **kwargs):
+    def inspirational(self, channel: str):
         """Sends a random inspirational message"""
-        resp = requests.get('http://inspirobot.me/api?generate=true')
+        resp = requests.get('https://inspirobot.me/api?generate=true')
         if resp.status_code == 200:
             url = resp.text
             # Download img
@@ -758,7 +570,7 @@ class Viktor:
                     f.write(img.content)
                 self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
 
-    def button_game(self, **kwargs):
+    def button_game(self):
         """Renders 5 buttons that the user clicks - one button has a value that awards them points"""
         btn_blocks = []
         # Determine where to hide the value
@@ -769,6 +581,7 @@ class Viktor:
         # Pick two places where negative values should go
         neg_items = list(np.random.choice([x for x in items if x != rand_val], int(n_buttons/2), False))
         neg_values = []
+        win = 0
         for i in items:
             if i == rand_val:
                 val = np.random.choice(50, 1)[0]
@@ -791,12 +604,11 @@ class Viktor:
 
         return blocks
 
-    def translate_that(self, channel: str, ts: str, message: str, **kwargs) -> Union[str, List[dict]]:
+    def translate_that(self, channel: str, ts: str, message: str, pattern: str) -> Union[str, List[dict]]:
         """Retrieves previous message and tries to translate it into whatever the target language is"""
-        match_pattern = kwargs.pop('match_pattern', None)
         target_lang = 'et'
-        if match_pattern is not None:
-            msg = re.sub(match_pattern, '', message).strip()
+        if pattern is not None:
+            msg = re.sub(pattern, '', message).strip()
             if msg == '':
                 return 'No target language code specified!'
             target_lang = msg.split()[0]
@@ -805,7 +617,7 @@ class Viktor:
                 return f'Unrecognized language code {target_lang}'
 
         prev_msg = self.st.get_prev_msg_in_channel(channel, ts,
-                                                   callable_list=[self.translate_anything, 'text',
+                                                   callable_list=[self.translate_anything, 'text', None,
                                                                   target_lang, False])
         if isinstance(prev_msg, str):
             # The callable above only gets called when we're working with a block
@@ -813,10 +625,9 @@ class Viktor:
         else:
             return prev_msg
 
-    def translate_anything(self, message: str, target: str = None,
-                           block_return: bool = True, **kwargs) -> Union[str, List[dict]]:
+    def translate_anything(self, message: str, match_pattern: str = None, target: str = None,
+                           block_return: bool = True) -> Union[str, List[dict]]:
         """Attempts to translate any phrase into the target language defined at the beginning of the command"""
-        match_pattern = kwargs.pop('match_pattern', None)
         if match_pattern is not None:
             # Request came directly
             msg = re.sub(match_pattern, '', message).strip()
@@ -854,7 +665,7 @@ class Viktor:
         else:
             return lang_dict['translation']
 
-    def uwu_that(self, channel: str, ts: str, **kwargs) -> Union[str, List[dict]]:
+    def uwu_that(self, channel: str, ts: str) -> Union[str, List[dict]]:
         """Retrieves previous message and converts to UwU"""
 
         prev_msg = self.st.get_prev_msg_in_channel(channel, ts, callable_list=[self.uwu, 'text'])
@@ -864,7 +675,7 @@ class Viktor:
         else:
             return prev_msg
 
-    def uwu(self, msg: str, **kwargs) -> str:
+    def uwu(self, msg: str) -> str:
         """uwu-fy a message"""
         default_lvl = 2
 
@@ -915,17 +726,28 @@ class Viktor:
 
         return text.replace('`', ' ')
 
-    def quote_me(self, message: str, **kwargs) -> Optional[str]:
+    def quote_me(self, message: str, match_pattern: str) -> Optional[str]:
         """Converts message into letter emojis"""
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            msg = re.sub(match_pattern, '', message).strip()
-            return self.st.build_phrase(msg)
-        return None
+        msg = re.sub(match_pattern, '', message).strip()
+        return self.st.build_phrase(msg)
 
-    # OKR Roles / Perks
-    # ====================================================
-    def onboarding_docs(self, **kwargs) -> List[dict]:
+    # Phrase building methods
+    # ------------------------------------------------
+    def guess_acronym(self, message: str) -> str:
+        return self.pb.guess_acronym(self.gs_dict['acronyms'], message)
+
+    def insult(self, message: str) -> str:
+        return self.pb.insult(self.gs_dict['insults'], message)
+
+    def phrase_generator(self, message: str) -> str:
+        return self.pb.phrase_generator(self.gs_dict['phrases'], message)
+
+    def compliment(self, raw_message: str, user: str) -> str:
+        return self.pb.compliment(self.gs_dict['compliments'], raw_message, user)
+
+    # OKR Methods
+    # ------------------------------------------------
+    def onboarding_docs(self) -> List[dict]:
         """Returns links to everything needed to bring a new OKR employee up to speed"""
         docs = [
             self.bkb.make_block_section([
@@ -942,7 +764,7 @@ class Viktor:
         ]
         return docs
 
-    def show_all_perks(self, **kwargs) -> str:
+    def show_all_perks(self) -> str:
         """Displays all the perks"""
         perks_df = self.gs_dict['okr_perks']
         perks_df = perks_df.sort_values('level')
@@ -952,7 +774,7 @@ class Viktor:
             perks += f'`lvl {level}`: \n\t\t - {perk_list}\n'
         return f'*OKR perks*:\n{perks}'
 
-    def show_my_perks(self, user: str, **kwargs) -> str:
+    def show_my_perks(self, user: str) -> str:
         """Lists the perks granted at the user's current level"""
         # Get the user's level
         users_df = self.gs_dict['okr_roles'].copy()
@@ -973,13 +795,9 @@ class Viktor:
         else:
             return 'User not found in OKR roles sheet :frowning:'
 
-    def update_user_level(self, channel: str, user: str, message: str, **kwargs) -> Optional[str]:
+    def update_user_level(self, channel: str, user: str, message: str, match_pattern: str) -> Optional[str]:
         """Increment the user's level"""
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            content = re.sub(match_pattern, '', message).strip()
-        else:
-            return None
+        content = re.sub(match_pattern, '', message).strip()
 
         if user not in self.approved_users:
             return 'LOL sorry, levelups are CEO-approved only'
@@ -1000,9 +818,8 @@ class Viktor:
         else:
             return 'No user tagged for update.'
 
-    def update_user_ltips(self, channel: str, user: str, message: str, **kwargs) -> Optional[str]:
+    def update_user_ltips(self, channel: str, user: str, message: str, match_pattern: str = None) -> Optional[str]:
         """Increment the user's level"""
-        match_pattern = kwargs.pop('match_pattern', None)
         if match_pattern is not None:
             content = re.sub(match_pattern, '', message).strip()
         else:
@@ -1024,7 +841,8 @@ class Viktor:
                     ltits = 1000 if ltits > 1000 else -1000
                 ltits_before = self.roles.loc[self.roles['user'] == user, 'ltits'].values[0]
                 self.roles.loc[self.roles['user'] == user, 'ltits'] += ltits
-                self.st.send_message(channel, f'LTITs for <@{user}> updated by `{ltits}` to `{ltits_before + ltits}`.')
+                self.st.send_message(channel,
+                                     f'LTITs for <@{user}> updated by `{ltits}` to `{ltits_before + ltits}`.')
                 self.write_roles()
             else:
                 return 'Please put points at the end. (+n, -n, n)'
@@ -1050,7 +868,7 @@ class Viktor:
         """Reads in JSON of roles"""
         return self.gs_dict['okr_roles']
 
-    def write_roles(self, **kwargs):
+    def write_roles(self):
         """Writes roles to GSheeets"""
         user_df = self.collect_roleplayers()
         self.roles = self.roles[['user', 'level', 'ltits', 'role']].merge(user_df, on='user', how='left')
@@ -1058,14 +876,9 @@ class Viktor:
 
         self.st.write_sheet(self.viktor_sheet, 'okr_roles', self.roles)
 
-    def update_roles(self, user: str, channel: str, msg: str, **kwargs) -> Optional:
+    def update_roles(self, user: str, channel: str, msg: str, match_pattern: str) -> Optional:
         """Updates a user with their role"""
-
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            content = re.sub(match_pattern, '', msg).strip()
-        else:
-            return None
+        content = re.sub(match_pattern, '', msg).strip()
 
         if '-u' in content:
             # Updating role of other user
@@ -1075,7 +888,7 @@ class Viktor:
         self.roles.loc[self.roles['user'] == user, 'role'] = content
         self.st.send_message(channel, 'Role for <@{}> updated.'.format(user))
 
-    def show_roles(self, user: str = None, **kwargs) -> List[str]:
+    def show_roles(self, user: str = None) -> List[str]:
         """Prints users roles to channel"""
         roles_output = []
         if user is None:
@@ -1097,7 +910,7 @@ class Viktor:
 
         return roles_output
 
-    def build_role_txt(self, channel: str, user: str = None, **kwargs):
+    def build_role_txt(self, channel: str, user: str = None):
         """Constructs a text blob consisting of roles without exceeding the character limits of Slack"""
         roles_output = self.show_roles(user)
         role_txt = ''

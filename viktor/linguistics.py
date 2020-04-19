@@ -203,7 +203,6 @@ class Linguistics:
 
     def __init__(self):
         self.trans = Translator()
-        pass
 
     @staticmethod
     def _prep_for_xpath(url: str) -> etree.ElementBase:
