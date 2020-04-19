@@ -284,19 +284,19 @@ class Viktor:
                 'pattern': '(et|en) <word-to-translate>',
                 'cat': cat_lang,
                 'desc': 'Offers a translation of an Estonian word into English or vice-versa',
-                'value': [self.ling.prep_message_for_translation, 'message']
+                'value': [self.ling.prep_message_for_translation, 'message', 'match_pattern']
             },
             r'^ekss\s': {
                 'pattern': 'ekss <word-to-lookup>',
                 'cat': cat_lang,
                 'desc': 'Offers example usage of the given Estonian word',
-                'value': [self.ling.prep_message_for_examples, 'message']
+                'value': [self.ling.prep_message_for_examples, 'message', 'match_pattern']
             },
             r'^lemma\s': {
                 'pattern': 'lemma <word-to-lookup>',
                 'cat': cat_lang,
                 'desc': 'Determines the lemma of the Estonian word',
-                'value': [self.ling.prep_message_for_root, 'message']
+                'value': [self.ling.prep_message_for_root, 'message', 'match_pattern']
             },
             r'^wfh\s?(time|epoch)': {
                 'pattern': 'wfh (time|epoch)',
@@ -308,7 +308,7 @@ class Viktor:
                 'pattern': 'ety <word>',
                 'cat': cat_useful,
                 'desc': 'Gets the etymology of a given word',
-                'value': [self.ling.get_etymology, 'message']
+                'value': [self.ling.get_etymology, 'message', 'match_pattern']
             }
         }
         # Initiate the bot, which comes with common tools for interacting with Slack's API

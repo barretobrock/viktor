@@ -213,7 +213,7 @@ class Linguistics:
         tree = etree.parse(StringIO(html), parser=parser)
         return tree
 
-    def get_etymology(self, message: str, **kwargs):
+    def get_etymology(self, message: str, pattern: str):
         """Grabs the etymology of a word from Etymonline"""
 
         def get_definition_name(res: etree.ElementBase) -> str:
@@ -226,11 +226,7 @@ class Linguistics:
                                 item_str += f' {item}'
             return item_str.strip()
 
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            word = re.sub(match_pattern, '', message).strip()
-        else:
-            return None
+        word = re.sub(pattern, '', message).strip()
 
         url = f'https://www.etymonline.com/search?q={parse.quote(word)}'
         content = self._prep_for_xpath(url)
@@ -249,15 +245,11 @@ class Linguistics:
         else:
             return f'No etymological data found for `{word}`.'
 
-    def prep_message_for_translation(self, message: str, **kwargs) -> Optional[str]:
+    def prep_message_for_translation(self, message: str, match_pattern: str) -> Optional[str]:
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `et <word>` or `en <word>`
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            word = re.sub(match_pattern, '', message).strip()
-            target = message[:2]
-        else:
-            return None
+        word = re.sub(match_pattern, '', message).strip()
+        target = message[:2]
 
         processed_word = self.get_root(word) if target == 'en' else word
 
@@ -294,14 +286,10 @@ class Linguistics:
         else:
             return f'No results found for `{word}` :frowning:'
 
-    def prep_message_for_examples(self, message: str, **kwargs) -> Optional[str]:
+    def prep_message_for_examples(self, message: str, match_pattern: str) -> Optional[str]:
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `et <word>` or `en <word>`
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            word = re.sub(match_pattern, '', message).strip()
-        else:
-            return None
+        word = re.sub(match_pattern, '', message).strip()
         processed_word = self.get_root(word)
 
         if processed_word is not None:
@@ -335,14 +323,10 @@ class Linguistics:
 
         return f'No example sentences found for `{word}`'
 
-    def prep_message_for_root(self, message: str, **kwargs) -> Optional[str]:
+    def prep_message_for_root(self, message: str, match_pattern: str) -> Optional[str]:
         """Takes in the raw message and prepares it for lookup"""
         # Format should be like `lemma <word>`
-        match_pattern = kwargs.pop('match_pattern', None)
-        if match_pattern is not None:
-            word = re.sub(match_pattern, '', message).strip()
-        else:
-            return None
+        word = re.sub(match_pattern, '', message).strip()
 
         # Make sure the word is a root if it's Estonian
         lemma = self.get_root(word)
