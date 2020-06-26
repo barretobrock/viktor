@@ -4,37 +4,40 @@
 Setup viktor.
 """
 import os
+import yaml
 import versioneer
 from setuptools import setup, find_packages
 
 
+# Read in package info via YAML
+with open('config.yaml') as f:
+    package_info = yaml.load(f, Loader=yaml.FullLoader)
+
+PACKAGE = package_info['REPO']['NAME']
+DESC = package_info['REPO']['DESC']
+URL = package_info['REPO']['URL']
 here_dir = os.path.abspath(os.path.dirname(__file__))
-init_fp = os.path.join(here_dir, *['viktor', '__init__.py'])
+init_fp = os.path.join(here_dir, *[PACKAGE, '__init__.py'])
+
+# Package Requirements
+fpath = os.path.join(here_dir, 'requirements.txt')
+with open(fpath, 'r') as f:
+    reqs_raw = f.read()
+reqs_list = reqs_raw.strip().split('\n')
 
 setup_args = {
-    'name': 'viktor',
+    'name': PACKAGE,
     'version': versioneer.get_version(),
     'cmdclass': versioneer.get_cmdclass(),
-    'license': 'MIT',
-    'description': 'A bot for Slack',
-    'url': 'https://github.com/barretobrock/viktor',
+    'license': 'GPL',
+    'description': DESC,
+    'url': URL,
     'author': 'Barret Obrock',
-    'author_email': 'barret@barretobrock.ee',
     'packages': find_packages(exclude=['tests']),
     'dependency_links': [
         'https://github.com/barretobrock/slacktools/tarball/master#egg=slacktools'
     ],
-    'install_requires': [
-        'Flask==1.1.2',
-        'googletrans==2.4.0'
-        'lxml==4.4.1',
-        'numpy==1.18.4',
-        'pandas==1.0.3',
-        'requests>=2.20.0',
-        'slacktools',
-        'slackeventsapi==2.1.0',
-    ],
-
+    'install_requires': reqs_list
 }
 
 setup(**setup_args)
