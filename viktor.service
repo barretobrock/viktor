@@ -5,14 +5,14 @@
 # sudo systemctl enable <filename>
 
 [Unit]
-Description=Kodubot Slack Bot Real Time Messager
+Description=Kodubot Slack Bot Real Time Messenger
 After=multi-user.target
 
 [Service]
 User=bobrock
 Group=bobrock
 Type=idle
-ExecStart=/home/bobrock/venvs/kavkil/bin/python3 /home/bobrock/extras/viktor/run.py
+ExecStart=/home/bobrock/venvs/viktor/bin/python3 /home/bobrock/extras/viktor/run.py
 Restart=on-failure
 
 [Install]
