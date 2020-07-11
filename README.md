@@ -23,8 +23,22 @@ python3 run.py
 
 ### Scopes
 #### Bot
- - reactions.add
+ - channels.history
+ - channels.read
+ - chat.write
+ - emoji.read
+ - files.write
+ - groups.history
+ - groups.read
+ - im.history
+ - im.read
+ - im.write
+ - mpim.read
+ - reactions.read
+ - reactions.write
+ - users.read
 #### User
+ - search.read
 
 
 

@@ -29,8 +29,8 @@ class Viktor:
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
         self.debug = debug
-        self.bot_name = f'Viktor {"Debugnov" if debug else "Produdnik"}'
-        self.triggers = ['viktor', 'v!'] if not debug else ['deviktor', 'dv!']
+        self.bot_name = f'Viktor {"Debugus" if debug else "Produdnik"}'
+        self.triggers = ['viktor', 'v!']
         self.main_channel = 'CM376Q90F'  # test
         self.emoji_channel = 'CLWCPQ2TV'  # emoji_suggestions
         self.general_channel = 'CMEND3W3H'  # general
@@ -43,7 +43,7 @@ class Viktor:
         self.version = version_dict['version']
         self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
         self.bootup_msg = [self.bkb.make_context_section([
-            f"*{self.bot_name}* *`{self.version}`* booted up at `{pd.datetime.now():%F %T}`!",
+            f"*{self.bot_name}* *`{self.version}`* booted up at `{dt.now():%F %T}`!",
             f"(updated {self.update_date})"
         ])]
 
@@ -340,8 +340,7 @@ class Viktor:
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
         notify_block = [
-            self.bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:'),
-            self.bkb.make_context_section(self.st.build_phrase('pour one out'))
+            self.bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
         ]
         self.st.message_main_channel(blocks=notify_block)
         sys.exit(0)
@@ -537,8 +536,8 @@ class Viktor:
 
     def wfh_epoch(self) -> List[dict]:
         """Calculates WFH epoch time"""
-        wfh_epoch = pd.datetime(year=2020, month=3, day=3, hour=19, minute=15)
-        now = pd.datetime.now()
+        wfh_epoch = dt(year=2020, month=3, day=3, hour=19, minute=15)
+        now = dt.now()
         diff = (now - wfh_epoch)
         wfh_secs = diff.total_seconds()
         strange_units = {

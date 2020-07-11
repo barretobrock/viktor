@@ -2,6 +2,7 @@ import os
 import json
 import signal
 import requests
+from datetime import datetime
 from random import randint
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
@@ -28,6 +29,7 @@ message_events = []
 emoji_events = []
 user_events = []
 action_timestamps = []
+message_limits = {}  # date, count
 users_list = Bot.st.get_channel_members('CLWCPQ2TV')  # get users in general
 app = Flask(__name__)
 
@@ -149,6 +151,19 @@ def reaction(event_data: dict):
 @bot_events.on('message')
 def scan_message(event_data: dict):
     Bot.st.parse_event(event_data)
+    if event_data['event']['user'] == 'UM35HE6R5':
+        today = f'{datetime.now():%F}'
+        if today in message_limits.keys():
+            if message_limits[today] >= 3:
+                # Bot.st.delete_message(event_data['event'])
+                Bot.st.user.chat_delete(
+                    channel=event_data['event']['channel'],
+                    ts=event_data['event']['ts']
+                )
+            else:
+                message_limits[today] += 1
+        else:
+            message_limits[today] = 1
 
 
 @bot_events.on('emoji_changed')
