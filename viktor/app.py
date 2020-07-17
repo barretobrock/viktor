@@ -2,7 +2,6 @@ import os
 import json
 import signal
 import requests
-from datetime import datetime
 from random import randint
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
@@ -33,7 +32,7 @@ users_list = Bot.st.get_channel_members('CLWCPQ2TV')  # get users in general
 app = Flask(__name__)
 
 # Events API listener
-bot_events = SlackEventAdapter(key_dict['signing_secret'], "/viktor/vikapi/events", app)
+bot_events = SlackEventAdapter(key_dict['signing-secret'], "/viktor/vikapi/events", app)
 
 
 @app.route('/viktor/vikapi/slash', methods=['GET', 'POST'])

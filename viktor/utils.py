@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple, Union
 from datetime import datetime as dt
 from random import randint
 from slacktools import SlackBotBase, GSheetReader, BlockKitBuilder
+from kavalkilu import Log
 from .linguistics import Linguistics
 from .phrases import PhraseBuilders
 from ._version import get_versions
@@ -24,6 +25,7 @@ class Viktor:
             creds: dict, dictionary of tokens & other credentials
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
+        self.log = Log(self.bot_name)
         self.debug = debug
         self.bot_name = f'Viktor {"Debugus" if debug else "Produdnik"}'
         self.triggers = ['viktor', 'v!']
@@ -45,9 +47,9 @@ class Viktor:
 
         # GSheets stuff
         self.gs_dict = {}
-        self.viktor_sheet = creds['spreadsheet_key']
+        self.viktor_sheet = creds['spreadsheet-key']
         self.viktor_sheet_link = f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
-        self.onboarding_link = f'https://docs.google.com/document/d/{creds["onboarding_key"]}/edit?usp=sharing'
+        self.onboarding_link = f'https://docs.google.com/document/d/{creds["onboarding-key"]}/edit?usp=sharing'
 
         self._read_in_sheets()
         self.roles = self.read_roles()
@@ -332,6 +334,7 @@ class Viktor:
         self.users_dict = {x['id']: x for x in self.st.get_channel_members('CM3E3E82J', True)}
         # This dictionary is for tracking updates to these dicts
         self.user_updates_dict = {}
+        self.log.debug(f'{self.bot_name} booted up!')
 
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
@@ -714,7 +717,7 @@ class Viktor:
 
         if level >= 2:
             # Level 2: Placement of 'uwu' when certain patterns occur
-            pattern_whitelist = {
+            pattern_allowlist = {
                 'uwu': {
                     'start': 'u',
                     'anywhere': ['nu', 'ou', 'du', 'un', 'bu'],
@@ -727,7 +730,7 @@ class Viktor:
             # Rebuild the phrase letter by letter
             phrase = []
             for word in text.split(' '):
-                for pattern, pattern_dict in pattern_whitelist.items():
+                for pattern, pattern_dict in pattern_allowlist.items():
                     if word.startswith(pattern_dict['start']):
                         word = word.replace(pattern_dict['start'], pattern)
                     else:
@@ -773,7 +776,7 @@ class Viktor:
                 "to get familiar with OKR and the industry we support!"
             ]),
             self.bkb.make_block_section([
-                f"\t<Onboarding Doc|{self.onboarding_link}>\n\t<Viktor's GSheet|{self.viktor_sheet_link}>\n"
+                f"\t<{self.onboarding_link}|Onboarding Doc>\n\t<{self.viktor_sheet_link}|Viktor's GSheet>\n"
             ]),
             self.bkb.make_block_section([
                 "For any questions, reach out to the CEO or our Head of Recruiting. "
