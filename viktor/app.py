@@ -6,20 +6,19 @@ from datetime import datetime
 from random import randint
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
+from kavalkilu import Path
 from .utils import Viktor
 
 
 bot_name = 'viktor'
 DEBUG = os.environ['VIKTOR_DEBUG'] == '1'
+kpath = Path()
 
-key_path = os.path.join(os.path.expanduser('~'), 'keys')
-key_dict = {}
-for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN', 'ONBOARDING_KEY', 'SPREADSHEET_KEY']:
-    with open(os.path.join(key_path, f'{bot_name.upper()}_SLACK_{t}')) as f:
-        key_dict[t.lower()] = f.read().strip()
+key_path = kpath.easy_joiner(kpath.keys_dir, f'{bot_name.upper()}_SLACK_KEYS.json')
+with open(key_path) as f:
+    key_dict = json.loads(f.read())
+Bot = Viktor(bot_name, creds=key_dict, debug=DEBUG)
 
-Bot = Viktor(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'],
-             ss_key=key_dict['spreadsheet_key'], onboarding_key=key_dict['onboarding_key'], debug=DEBUG)
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
 signal.signal(signal.SIGTERM, Bot.cleanup)
@@ -151,19 +150,19 @@ def reaction(event_data: dict):
 @bot_events.on('message')
 def scan_message(event_data: dict):
     Bot.st.parse_event(event_data)
-    if event_data['event']['user'] == 'UM35HE6R5':
-        today = f'{datetime.now():%F}'
-        if today in message_limits.keys():
-            if message_limits[today] >= 3:
-                # Bot.st.delete_message(event_data['event'])
-                Bot.st.user.chat_delete(
-                    channel=event_data['event']['channel'],
-                    ts=event_data['event']['ts']
-                )
-            else:
-                message_limits[today] += 1
-        else:
-            message_limits[today] = 1
+    # if event_data['event']['user'] == 'UM35HE6R5':
+    #     today = f'{datetime.now():%F}'
+    #     if today in message_limits.keys():
+    #         if message_limits[today] >= 3:
+    #             # Bot.st.delete_message(event_data['event'])
+    #             Bot.st.user.chat_delete(
+    #                 channel=event_data['event']['channel'],
+    #                 ts=event_data['event']['ts']
+    #             )
+    #         else:
+    #             message_limits[today] += 1
+    #     else:
+    #         message_limits[today] = 1
 
 
 @bot_events.on('emoji_changed')

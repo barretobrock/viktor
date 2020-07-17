@@ -17,21 +17,17 @@ from ._version import get_versions
 class Viktor:
     """Handles messaging to and from Slack API"""
 
-    def __init__(self, log_name: str, xoxb_token: str, xoxp_token: str, ss_key: str, onboarding_key: str,
-                 debug: bool = False):
+    def __init__(self, log_name: str, creds: dict, debug: bool = False):
         """
         Args:
             log_name: str, name of the kavalkilu.Log object to retrieve
-            xoxb_token: str, bot token to use
-            xoxp_token: str, user token to use
-            ss_key: str, spreadsheet containing various things Viktor reads in
-            onboarding_key: str, link to onboarding documentation
+            creds: dict, dictionary of tokens & other credentials
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
         self.debug = debug
         self.bot_name = f'Viktor {"Debugus" if debug else "Produdnik"}'
         self.triggers = ['viktor', 'v!']
-        self.main_channel = 'CM376Q90F'  # test
+        self.test_channel = 'CM376Q90F'  # test
         self.emoji_channel = 'CLWCPQ2TV'  # emoji_suggestions
         self.general_channel = 'CMEND3W3H'  # general
         self.alerts_channel = 'alerts'  # #alerts
@@ -49,9 +45,9 @@ class Viktor:
 
         # GSheets stuff
         self.gs_dict = {}
-        self.viktor_sheet = ss_key
+        self.viktor_sheet = creds['spreadsheet_key']
         self.viktor_sheet_link = f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
-        self.onboarding_link = f'https://docs.google.com/document/d/{onboarding_key}/edit?usp=sharing'
+        self.onboarding_link = f'https://docs.google.com/document/d/{creds["onboarding_key"]}/edit?usp=sharing'
 
         self._read_in_sheets()
         self.roles = self.read_roles()
@@ -312,16 +308,16 @@ class Viktor:
             }
         }
         # Initiate the bot, which comes with common tools for interacting with Slack's API
-        self.st = SlackBotBase(log_name, triggers=self.triggers, team='orbitalkettlerelay',
-                               main_channel=self.main_channel, xoxp_token=xoxp_token, xoxb_token=xoxb_token,
-                               commands=commands, cmd_categories=cmd_categories)
+        self.st = SlackBotBase(log_name, triggers=self.triggers, creds=creds,
+                               test_channel=self.test_channel, commands=commands,
+                               cmd_categories=cmd_categories)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
         self.emoji_list = self._get_emojis()
         self.pb = PhraseBuilders(self.st)
 
-        self.st.message_main_channel(blocks=self.bootup_msg)
+        self.st.message_test_channel(blocks=self.bootup_msg)
 
         # Lastly, build the help text based on the commands above and insert back into the commands dict
         commands[r'^help']['value'] = self.st.build_help_block(intro, avi_url, avi_alt)
@@ -342,7 +338,7 @@ class Viktor:
         notify_block = [
             self.bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
         ]
-        self.st.message_main_channel(blocks=notify_block)
+        self.st.message_test_channel(blocks=notify_block)
         sys.exit(0)
 
     def process_incoming_action(self, user: str, channel: str, action: dict) -> Optional:
