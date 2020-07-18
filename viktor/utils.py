@@ -248,6 +248,12 @@ class Viktor:
                 'desc': 'Giggles',
                 'value': [self.giggle],
             },
+            r'^shurg': {
+                'pattern': '<any text with "shurg" at the beginning>',
+                'cat': cat_notsouseful,
+                'desc': '¯\_(ツ)_/¯',
+                'value': [self.shurg, 'message'],
+            },
             r'^onbo[a]?r[d]?ing$': {
                 'pattern': '(onboarding|onboring)',
                 'cat': cat_org,
@@ -524,6 +530,11 @@ class Viktor:
         no_cnt += 1
         response = '{}, thank you!'.format(', '.join(['no'] * no_cnt)).capitalize()
         return response
+
+    @staticmethod
+    def shurg(message: str) -> str:
+        """Responds to 'no, thank you' with an extra 'no' """
+        return f'¯\\_(ツ)_/¯ {message}'
 
     @staticmethod
     def access_something() -> str:
