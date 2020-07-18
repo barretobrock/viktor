@@ -5,17 +5,19 @@ import requests
 from random import randint
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
-from kavalkilu import Path
+from kavalkilu import Path, Log
 from .utils import Viktor
 
 
 bot_name = 'viktor'
 DEBUG = os.environ['VIKTOR_DEBUG'] == '1'
 kpath = Path()
+logg = Log(bot_name)
 
 key_path = kpath.easy_joiner(kpath.keys_dir, f'{bot_name.upper()}_SLACK_KEYS.json')
 with open(key_path) as f:
     key_dict = json.loads(f.read())
+logg.debug('Instantiating bot...')
 Bot = Viktor(bot_name, creds=key_dict, debug=DEBUG)
 
 # Register the cleanup function as a signal handler
@@ -48,7 +50,7 @@ def handle_slash():
 
 @app.route('/viktor/vikapi/actions', methods=['GET', 'POST'])
 def handle_action():
-    """Handle a response when a user clicks a button from Wizzy in Slack"""
+    """Handle a response when a user clicks a button from a form Slack"""
     event_data = json.loads(request.form["payload"])
     user = event_data['user']['id']
     channel = event_data['channel']['id']

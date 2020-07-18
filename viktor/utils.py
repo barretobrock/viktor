@@ -25,9 +25,9 @@ class Viktor:
             creds: dict, dictionary of tokens & other credentials
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
-        self.log = Log(self.bot_name)
-        self.debug = debug
         self.bot_name = f'Viktor {"Debugus" if debug else "Produdnik"}'
+        self.log = Log(log_name, child_name='viktor_bot')
+        self.debug = debug
         self.triggers = ['viktor', 'v!']
         self.test_channel = 'CM376Q90F'  # test
         self.emoji_channel = 'CLWCPQ2TV'  # emoji_suggestions
@@ -342,6 +342,8 @@ class Viktor:
             self.bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
         ]
         self.st.message_test_channel(blocks=notify_block)
+        self.log.info('Bot shutting down...')
+        self.log.close()
         sys.exit(0)
 
     def process_incoming_action(self, user: str, channel: str, action: dict) -> Optional:
