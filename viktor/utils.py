@@ -534,7 +534,7 @@ class Viktor:
     @staticmethod
     def shurg(message: str) -> str:
         """Responds to 'no, thank you' with an extra 'no' """
-        return f'¯\\_(ツ)_/¯ {message}'
+        return f'¯\\_(ツ)_/¯ {message.replace("shurg", "").strip()}'
 
     @staticmethod
     def access_something() -> str:
