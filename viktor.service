@@ -5,7 +5,7 @@
 # sudo systemctl enable <filename>
 
 [Unit]
-Description=Kodubot Slack Bot Real Time Messenger
+Description=Viktor Slack Bot
 After=multi-user.target
 
 [Service]
