@@ -35,10 +35,10 @@ users_list = Bot.st.get_channel_members('CLWCPQ2TV')  # get users in general
 app = Flask(__name__)
 
 # Events API listener
-bot_events = SlackEventAdapter(key_dict['signing-secret'], "/viktor/vikapi/events", app)
+bot_events = SlackEventAdapter(key_dict['signing-secret'], "/api/events", app)
 
 
-@app.route('/viktor/vikapi/slash', methods=['GET', 'POST'])
+@app.route('/api/slash', methods=['GET', 'POST'])
 def handle_slash():
     """Handles a slash command"""
     event_data = request.form
@@ -49,7 +49,7 @@ def handle_slash():
     return make_response('', 200)
 
 
-@app.route('/viktor/vikapi/actions', methods=['GET', 'POST'])
+@app.route('/api/actions', methods=['GET', 'POST'])
 def handle_action():
     """Handle a response when a user clicks a button from a form Slack"""
     event_data = json.loads(request.form["payload"])
@@ -77,7 +77,7 @@ def handle_action():
     return make_response('', 200)
 
 
-@app.route("/viktor/cron/new_emojis", methods=['POST'])
+@app.route("/cron/new_emojis", methods=['POST'])
 def handle_cron_new_emojis():
     """Check for newly uploaded emojis (triggered by cron task that sends POST req every 10 mins)"""
     # Check emojis uploaded (every 10 mins)
@@ -98,7 +98,7 @@ def handle_cron_new_emojis():
     return make_response('', 200)
 
 
-@app.route("/viktor/cron/profile_update", methods=['POST'])
+@app.route("/cron/profile_update", methods=['POST'])
 def handle_cron_profile_update():
     """Check for newly updated profile elements (triggered by cron task that sends POST req every 10 mins)"""
     # Check updated profile (every 10 mins)

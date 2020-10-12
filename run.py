@@ -5,7 +5,7 @@ os.environ['VIKTOR_DEBUG'] = "0"
 from viktor.app import app
 
 
-@app.route('/viktor')
+@app.route('/')
 def index():
     return 'VIKTOR'
 
