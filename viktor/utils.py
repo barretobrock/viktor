@@ -254,6 +254,12 @@ class Viktor:
                 'desc': '¯\_(ツ)_/¯',
                 'value': [self.shurg, 'message'],
             },
+            r'^(randcap|mock)': {
+                'pattern': '<any text with "randcap" or "mock" at the beginning>',
+                'cat': cat_notsouseful,
+                'desc': 'whaT dO yOu thiNK iT Does',
+                'value': [self.randcap, 'message'],
+            },
             r'^onbo[a]?r[d]?ing$': {
                 'pattern': '(onboarding|onboring)',
                 'cat': cat_org,
