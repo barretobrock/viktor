@@ -369,6 +369,3 @@ class Linguistics:
             'tgt_name': self.iso_639_codes[translation.dest],
             'translation': translation.text
         }
-
-
-''.join(choice((str.upper, str.lower))(c) for c in sentence)
