@@ -30,6 +30,7 @@ emoji_events = []
 user_events = []
 action_timestamps = []
 message_limits = {}  # date, count
+logg.debug('Building user list')
 users_list = Bot.st.get_channel_members('CLWCPQ2TV')  # get users in general
 app = Flask(__name__)
 

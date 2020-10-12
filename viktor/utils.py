@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Optional, Tuple, Union
 from datetime import datetime as dt
-from random import randint
+from random import randint, choice
 from slacktools import SlackBotBase, GSheetReader, BlockKitBuilder
 from kavalkilu import Log
 from .linguistics import Linguistics
@@ -533,8 +533,19 @@ class Viktor:
 
     @staticmethod
     def shurg(message: str) -> str:
-        """Responds to 'no, thank you' with an extra 'no' """
+        """Shrugs at the front"""
         return f'¯\\_(ツ)_/¯ {message.replace("shurg", "").strip()}'
+
+    @staticmethod
+    def shrugg(message: str) -> str:
+        """Shrugs at the back"""
+        return f'{message.replace("shrug", "").strip()} ¯\\_(ツ)_/¯'
+
+    @staticmethod
+    def randcap(message: str) -> str:
+        """Randomly capitalize string"""
+        weights = (str.lower, str.upper, str.lower)
+        return ''.join(choice(weights)(c) for c in message)
 
     @staticmethod
     def access_something() -> str:
