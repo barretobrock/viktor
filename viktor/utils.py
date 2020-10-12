@@ -761,6 +761,9 @@ class Viktor:
             # Rebuild the phrase letter by letter
             phrase = []
             for word in text.split(' '):
+                roll = randint(1, 10)
+                if roll < 3:
+                    word = f'{word[0]}-{word}'
                 for pattern, pattern_dict in pattern_allowlist.items():
                     if word.startswith(pattern_dict['start']):
                         word = word.replace(pattern_dict['start'], pattern)
