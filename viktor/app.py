@@ -12,7 +12,7 @@ from .utils import Viktor
 bot_name = 'viktor'
 DEBUG = os.environ['VIKTOR_DEBUG'] == '1'
 kpath = Path()
-logg = Log(bot_name)
+logg = Log(bot_name, arg_parse=False)
 
 key_path = kpath.easy_joiner(kpath.keys_dir, f'{bot_name.upper()}_SLACK_KEYS.json')
 with open(key_path) as f:
