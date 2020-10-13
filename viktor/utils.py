@@ -551,8 +551,8 @@ class Viktor:
     def randcap(message: str) -> str:
         """Randomly capitalize string"""
         message = ' '.join(message.split()[1:])
-        weights = (str.lower, str.upper, str.lower)
-        return ''.join(choice(weights)(c) for c in message)
+        weights = (str.lower, str.upper)
+        return ''.join(choice(weights)(c) for c in message) + ' :spongebob-mock:'
 
     @staticmethod
     def access_something() -> str:

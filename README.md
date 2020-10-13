@@ -4,9 +4,25 @@ A helpful slackbot with a heart of gold
 ## Info
 This is really something I built for personal use. There are credential collection methods that rely on prebuilt routines that might prove specific to only my use case. Should anyone discover this and wish to use it, feel free to contact me and I'll work on adapting this to wider use cases.
 
+## Prerequisites
+ - py-package-manager cloned
+ - bash enabled, not dash
+ ```bash
+# Check with
+sh --version
+# Change with
+sudo dpkg-reconfigure dash 
+```
+
 ## Installation
 ```bash
-pip3 install git+https://github.com/barretobrock/viktor.git#egg=viktor
+cd ~/venvs && python3 -m venv viktor
+source ~/venvs/viktor/bin/activate
+cd ~/extras && git clone https://github.com/barretobrock/viktor.git
+cd viktor && sh update_script.sh
+
+# Add service file to system
+sudo cp viktor.service /lib/systemd/system/
 ```
 
 ## Upgrade
