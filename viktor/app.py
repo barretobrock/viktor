@@ -3,22 +3,37 @@ import json
 import signal
 import requests
 from random import randint
+from typing import Dict
 from flask import Flask, request, make_response
-from slacktools import SlackEventAdapter
-from kavalkilu import Path, Log
+from slacktools import SlackEventAdapter, SecretStore
+from easylogger import Log
+from kavalkilu import Path
 from .utils import Viktor
 
 
 bot_name = 'viktor'
 DEBUG = os.environ['VIKTOR_DEBUG'] == '1'
 kpath = Path()
-logg = Log(bot_name, arg_parse=False)
+logg = Log(bot_name)
 
-key_path = kpath.easy_joiner(kpath.keys_dir, f'{bot_name.upper()}_SLACK_KEYS.json')
-with open(key_path) as f:
-    key_dict = json.loads(f.read())
+
+def read_props() -> Dict[str, str]:
+    props = {}
+    with open(os.path.abspath('./secretprops.properties'), 'r') as f:
+        contents = f.read().split('\n')
+        for item in contents:
+            if item != '':
+                key, value = item.split('=', 1)
+                props[key] = value.strip()
+    return props
+
+
+secretprops = read_props()
+credstore = SecretStore('secretprops-bobdev.kdbx', secretprops['slacktools_secret'])
+vik_creds = credstore.get_key_and_make_ns(bot_name)
+
 logg.debug('Instantiating bot...')
-Bot = Viktor(bot_name, creds=key_dict, debug=DEBUG)
+Bot = Viktor(bot_name, credstore=credstore, debug=DEBUG)
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
@@ -35,7 +50,7 @@ users_list = Bot.st.get_channel_members('CLWCPQ2TV')  # get users in general
 app = Flask(__name__)
 
 # Events API listener
-bot_events = SlackEventAdapter(key_dict['signing-secret'], "/api/events", app)
+bot_events = SlackEventAdapter(vik_creds.signing_secret, "/api/events", app)
 
 
 @app.route('/api/slash', methods=['GET', 'POST'])

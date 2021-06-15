@@ -8,8 +8,8 @@ import numpy as np
 from typing import List, Optional, Tuple, Union
 from datetime import datetime as dt
 from random import randint, choice
-from slacktools import SlackBotBase, GSheetReader, BlockKitBuilder
-from kavalkilu import Log
+from slacktools import SlackBotBase, GSheetReader, BlockKitBuilder, SecretStore
+from easylogger import Log
 from .linguistics import Linguistics
 from .phrases import PhraseBuilders
 from ._version import get_versions
@@ -18,11 +18,11 @@ from ._version import get_versions
 class Viktor:
     """Handles messaging to and from Slack API"""
 
-    def __init__(self, log_name: str, creds: dict, debug: bool = False):
+    def __init__(self, log_name: str, credstore: SecretStore, debug: bool = False):
         """
         Args:
             log_name: str, name of the kavalkilu.Log object to retrieve
-            creds: dict, dictionary of tokens & other credentials
+            credstore: SecretStore, dictionary of API tokens & other credentials
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
         self.bot_name = f'Viktor {"Debugus" if debug else "Produdnik"}'
@@ -36,6 +36,7 @@ class Viktor:
         self.approved_users = ['UM35HE6R5', 'UM3E3G72S']
         self.bkb = BlockKitBuilder()
         self.ling = Linguistics()
+        self.vik_creds = credstore.get_key_and_make_ns('viktor')
         # Bot version stuff
         version_dict = get_versions()
         self.version = version_dict['version']
@@ -47,9 +48,10 @@ class Viktor:
 
         # GSheets stuff
         self.gs_dict = {}
-        self.viktor_sheet = creds['spreadsheet-key']
+        self.viktor_sheet = self.vik_creds.spreadsheet_key
         self.viktor_sheet_link = f'https://docs.google.com/spreadsheets/d/{self.viktor_sheet}/'
-        self.onboarding_link = f'https://docs.google.com/document/d/{creds["onboarding-key"]}/edit?usp=sharing'
+        self.onboarding_link = f'https://docs.google.com/document/d/{self.vik_creds.onboarding_key}/' \
+                               f'edit?usp=sharing'
 
         self._read_in_sheets()
         self.roles = self.read_roles()
@@ -322,9 +324,9 @@ class Viktor:
             }
         }
         # Initiate the bot, which comes with common tools for interacting with Slack's API
-        self.st = SlackBotBase(log_name, triggers=self.triggers, creds=creds,
-                               test_channel=self.test_channel, commands=commands,
-                               cmd_categories=cmd_categories)
+        self.st = SlackBotBase(log_name, triggers=self.triggers, credstore=credstore,
+                               test_channel=self.test_channel, commands=commands, cmd_categories=cmd_categories,
+                               slack_cred_name='viktor')
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
@@ -492,13 +494,7 @@ class Viktor:
 
     def _read_in_sheets(self):
         """Reads in GSheets for Viktor"""
-        gs = GSheetReader(self.viktor_sheet)
-        sheets = gs.sheets
-        self.gs_dict = {}
-        for sheet in sheets:
-            self.gs_dict.update({
-                sheet.title: gs.get_sheet(sheet.title)
-            })
+        self.gs_dict = self.st.read_in_sheets()
 
     def refresh_sheets(self) -> str:
         """Refreshes Viktor's Google Sheet"""
