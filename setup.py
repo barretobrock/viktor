@@ -25,4 +25,3 @@ setup_args = {
 setup_args.update(config_dict)
 
 setup(**setup_args)
-to
