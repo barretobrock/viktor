@@ -2,6 +2,7 @@ import json
 import signal
 import requests
 import sqlite3
+from datetime import datetime, timedelta
 from random import randint, choice
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter, SecretStore, BlockKitBuilder as bkb
@@ -29,10 +30,6 @@ signal.signal(signal.SIGTERM, Bot.cleanup)
 
 # Include a means of halting duplicate requests from being handled
 #   until I can figure out a better async protocol
-message_events = []
-emoji_events = []
-user_events = []
-action_timestamps = []
 message_limits = {}  # date, count
 logg.debug('Building user list')
 app = Flask(__name__)
@@ -91,21 +88,24 @@ def handle_action():
 @app.route("/cron/new_emojis", methods=['POST'])
 def handle_cron_new_emojis():
     """Check for newly uploaded emojis (triggered by cron task that sends POST req every 10 mins)"""
-    # Check emojis uploaded (every 10 mins)
-    if len(Bot.new_emoji_set) > 0:
+    # Check emojis uploaded (every 60 mins)
+    # This url is hit in crontab as such:
+    #       0 * * * * /opt/local/bin/curl -X POST https://YOUR_APP/cron/new_emojis
+    session = Session()
+    now = datetime.utcnow()
+    interval = (now - timedelta(minutes=60))
+    new_emojis = session.query(TableEmojis).filter(TableEmojis.created_date > interval).all()
+    if len(new_emojis) > 0:
         # Go about notifying channel of newly uploaded emojis
-        emojis = [f':{x}:' for x in list(Bot.new_emoji_set)]
+        emojis = [f':{x.name}:' for x in new_emojis]
         emoji_str = ''
         for i in range(0, len(emojis), 10):
             emoji_str += f"{''.join(emojis[i:i + 10])}\n"
         msg_block = [
             bkb.make_context_section('Incoming emojis that were added in the last 10 min!'),
         ]
-        Bot.st.send_message(Bot.emoji_channel, '', blocks=msg_block)
+        Bot.st.send_message(Bot.emoji_channel, 'new emoji report', blocks=msg_block)
         Bot.st.send_message(Bot.emoji_channel, emoji_str)
-        # Reset list of added emojis to an empty set
-        Bot.new_emoji_set = set()
-
     return make_response('', 200)
 
 
@@ -202,6 +202,7 @@ def notify_new_emojis(event_data):
     if event['subtype'] == 'add':
         emoji = event['name']
         session.add(TableEmojis(name=emoji))
+        session.commit()
 
 
 @bot_events.on('user_change')

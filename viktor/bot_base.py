@@ -321,7 +321,7 @@ class Viktor:
         self.st = SlackBotBase(triggers=self.triggers, credstore=vik_app.credstore,
                                test_channel=self.test_channel, commands=self.commands,
                                cmd_categories=cmd_categories, slack_cred_name=auto_config.BOT_NICKNAME,
-                               parent_log=self.log)
+                               parent_log=self.log, use_session=True)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
@@ -332,6 +332,10 @@ class Viktor:
         self.st.message_test_channel(blocks=self.get_bootup_msg())
 
         self.emoji_list = self.refresh_emojis()
+        # Place to temporarily store things. Typical structure is activity -> user -> data
+        self.state_store = {
+            'new-emoji': {}
+        }
 
         self.log.debug(f'{self.bot_name} booted up!')
 
@@ -388,6 +392,16 @@ class Viktor:
                 resp = self.update_user_ltips(channel, self.approved_users[0], f'-u <@{user}> {game_value}')
                 if resp is not None:
                     self.st.send_message(channel, resp)
+        elif action_id == 'new-emoji-p1':
+            # Store this user's first portion of the new emoji request
+            new_emoji_req = {user: {'url': action_value}}
+            self.state_store['new-emoji'].update(new_emoji_req)
+            # Send the second portion
+            self.add_emoji_form_p2(user=user, channel=channel, url=action_value)
+        elif action_id == 'new-emoji-p2':
+            # Compile all the details together and try to get the emoji uploaded
+            url = self.state_store['new-emoji'].get(user).get('url')
+            self.add_emoji(user, channel, url=url, new_name=action_value)
 
     def prebuild_main_menu(self, user_id: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""
@@ -790,10 +804,13 @@ class Viktor:
 
     def add_emoji(self, user: str, channel: str, url: str, new_name: str):
         """Attempts to upload new emoji"""
-        if self.st.session.upload_emoji_from_url(url, new_name):
+        success = self.st.session.upload_emoji_from_url(url, new_name)
+        if success:
             msg = f'Success! Here\'s how your emoji looks: :{new_name}:'
         else:
-            msg = 'Something went wrong. Unable to upload the emoji at this time...'
+            msg = 'Something went wrong. Unable to upload the emoji at this time. ' \
+                  'Make sure the emoji name you chose is not already in use. ' \
+                  f'(Hint: if it is, there will be an emoji here: :{new_name}:'
         self.st.private_channel_message(user_id=user, channel=channel, message=msg)
 
     # Phrase building methods

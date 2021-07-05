@@ -17,7 +17,6 @@ class Forms:
             'https://leekspin.ytmnd.com/'
         ]
         button_list = [
-            bkb.make_action_button('Compliment', value='compliment', action_id='compliment', url=choice(links)),
             bkb.make_action_button('Phrase', value='phrase', action_id='phrase', url=choice(links)),
             bkb.make_action_button('Insult', value='insult', action_id='insult', url=choice(links)),
             bkb.make_action_button('OKR Roles', value='roles', action_id='roles', url=choice(links)),
@@ -45,6 +44,7 @@ class Forms:
                                              alt_text='emoji'),
             bkb.make_plaintext_input(label='Type the name of the emoji without ":"', action_id='new-emoji-p2'),
             bkb.make_action_button_group([
-                bkb.make_action_button('Cancel!!!', value='', action_id='new-emoji-cancel', danger_style=True)
+                bkb.make_action_button('Cancel!!!', value='cancel', action_id='new-emoji-cancel',
+                                       danger_style=True)
             ])
         ]
