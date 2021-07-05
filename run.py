@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
-os.environ['VIKTOR_DEBUG'] = "0"
+os.environ['VIKTOR_ENV'] = "PRODUCTION"
 from viktor.app import app
 
 
@@ -12,5 +12,3 @@ def index():
 
 if __name__ == '__main__':
     app.run(port=5003)
-
-

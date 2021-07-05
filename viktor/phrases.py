@@ -1,51 +1,46 @@
 import re
 import string
-import pandas as pd
-import numpy as np
 from random import randint
-from typing import List, Optional
+from typing import List, Optional, Dict, Union, Tuple
+from sqlalchemy.orm import Session
 from slacktools import SlackBotBase
+from .model import TableAcronyms, TablePhrases, TableCompliments, TableInsults
 
 
 class PhraseBuilders:
+    pronoun_direction = {
+        'i': ['you', 'yourself', 'u', 'urself'],
+        'you': ['me', 'myself'],
+        'she': ['her', 'she'],
+        'he': ['him', 'he'],
+        'it': ['it'],
+        'they': ['them', 'they']
+    }
+
     def __init__(self, slacktool_obj: SlackBotBase):
         self.st = slacktool_obj
 
     @staticmethod
-    def _check_group(group_name: str, group_dict: dict, sheet_name: str) -> Optional[str]:
-        """Makes sure that the particular group desired exists"""
-        if group_name not in group_dict.keys():
-            return f'Cannot find set `{group_name}` in the `{sheet_name}` sheet. ' \
-                   f'Available sets: `{"`, `".join(group_dict.keys())}`'
-        return None
-
-    @staticmethod
-    def _build_group_dict(col_list: List[str]) -> dict:
-        """Builds a dictionary of the columns grouped together by prefix in the column name"""
-        # Parse the columns into flags and order
-        group_dict = {}
-        for col in col_list:
-            if '_' in col:
-                k, v = col.split('_')
-                if k in group_dict.keys():
-                    group_dict[k].append(col)
-                else:
-                    group_dict[k] = [col]
+    def _word_result_organiser(word_results: List[Union[TablePhrases, TableCompliments, TableInsults]]) -> \
+            Dict[int, List[str]]:
+        """Iterates over the list of word results and organizes the words by 'stage' column"""
+        words_organised = {}
+        for word in word_results:
+            if word.stage in words_organised.keys():
+                words_organised[word.stage].append(word.text)
             else:
-                group_dict[col] = [col]
-        return group_dict
+                words_organised[word.stage] = [word.text]
+        return words_organised
 
     @staticmethod
-    def _phrase_builder(df: pd.DataFrame, phrase_cols: List[str]) -> List[str]:
+    def _phrase_builder(word_dict: Dict[int, List[str]]) -> List[str]:
         """Randomly assembles phrases together from a collection of columns in a dataframe"""
         phrase_list = []
-        for phrase_part in sorted(phrase_cols):
-            part = df[phrase_part].replace('', np.NaN).dropna().unique().tolist()
-            if len(part) > 1:
-                # Choose part from multiple parts
-                txt = part[randint(0, len(part) - 1)]
+        for k, v in word_dict.items():
+            if len(v) > 1:
+                txt = v[randint(0, len(v) - 1)]
             else:
-                txt = part[0]
+                txt = v[0]
             phrase_list.append(txt.strip())
         return phrase_list
 
@@ -60,7 +55,7 @@ class PhraseBuilders:
         """
         return self.st.parse_flags_from_command(message)['cmd'].replace(cmd_base, '').strip()
 
-    def guess_acronym(self, acro_df: pd.DataFrame, message: str) -> str:
+    def guess_acronym(self, message: str, session: Session) -> str:
         """Tries to guess an acronym from a message"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -72,21 +67,19 @@ class PhraseBuilders:
 
         # Parse the group of acronyms the user wants to work with
         acronym_group = self.st.get_flag_from_command(message, flags=['group', 'g'], default='standard')
-        # Number of guessed to make
+        # Number of guesses to make
         n_times = self.st.get_flag_from_command(message, flags=['n'], default='3')
         n_times = int(n_times) if n_times.isnumeric() else 3
-        # Choose the acronym list to use
-        cols = acro_df.columns.tolist()
-        # Read in a dictionary of all the columns of that dataframe, organized by column prefix (phrase_group)
-        phrase_group_dict = self._build_group_dict(cols)
+        # Select the acronym list to use, verify that we have some words in that group
+        acronyms = session.query(TableAcronyms).filter(TableAcronyms.type == acronym_group).all()
+        if len(acronyms) == 0:
+            # No such type. Inform user about proper types
+            available_sets = [
+                x.type.name for x in session.query(TableAcronyms.type).group_by(TableAcronyms.type).all()]
+            return f'Cannot find set `{acronym_group}` in the table. ' \
+                   f'Available sets: `{"`, `".join(available_sets)}`'
 
-        # Confirm that the user's desired group exists in the dict
-        group_confirm = self._check_group(acronym_group, phrase_group_dict, 'acronyms')
-        if group_confirm is not None:
-            # Doesn't exist; notify user
-            return group_confirm
-
-        words = acro_df.loc[~acro_df[acronym_group].isnull(), acronym_group].unique().tolist()
+        words = [x.text for x in acronyms]
 
         # Put the words into a dictionary, classified by first letter
         a2z = string.ascii_lowercase
@@ -111,96 +104,105 @@ class PhraseBuilders:
         guess_chunk = "\n_OR_\n".join(guesses)
         return f':robot-face: Here are my guesses for *`{acronym.upper()}`*!\n {guess_chunk}'
 
-    def _phrase_action_handler(self, df: pd.DataFrame, cmd_base: str, message: str, sheet_name: str,
-                               default_phrase_group: str, user: str = None) -> str:
-        """Wrapper method for unifying the different types of phrase builders we have
-
-        Args:
-            cmd_base(str): The type of command we're working with (e.g., 'insult', 'compliment')
-            message(str): The command in its entirety
-            sheet_name(str): The name of the sheet in the spreadsheet we'll be examining
-            default_phrase_group(str): The phrase group to default to.
-            user(str): The user to tag (currently used in compliments only)
-        """
+    def _message_extractor(self, message, cmd: str, default_group: str) -> Tuple[str, int, Optional[str]]:
+        """extracts valuable info from message"""
         # Parse the group of phrases the user wants to work with
-        phrase_group = self.st.get_flag_from_command(message, flags=['group', 'g'], default=default_phrase_group)
+        phrase_group = self.st.get_flag_from_command(message, flags=['group', 'g'], default=default_group)
         # Number of times to cycle through phrase generation
         n_times = self.st.get_flag_from_command(message, flags=['n'], default='1')
         n_times = int(n_times) if n_times.isnumeric() else 1
         # Capture a possible target (not always used though)
-        target = self._get_target(message, cmd_base)
+        target = self._get_target(message, cmd)
+        return phrase_group, n_times, target
 
-        # Read in the dataframe we'll work with
-        cols = df.columns.tolist()
-        # Read in a dictionary of all the columns of that dataframe, organized by column prefix (phrase_group)
-        phrase_group_dict = self._build_group_dict(cols)
-
-        # Confirm that the user's desired group exists in the dict
-        group_confirm = self._check_group(phrase_group, phrase_group_dict, sheet_name)
-        if group_confirm is not None:
-            # Doesn't exist; notify user
-            return group_confirm
-
-        phrase_cols = phrase_group_dict[phrase_group]
-        phrases = []
-        for i in range(n_times):
-            if i == n_times - 1 and any(['joiner' in x for x in phrase_cols]):
-                # Last iteration. Remove the joiner and add a period
-                phrases += self._phrase_builder(df, phrase_cols)[:-1]
-            else:
-                phrases += self._phrase_builder(df, phrase_cols)
-
-        # This will help if our target is a pronoun
-        pronoun_direction = {
-            'i': ['you', 'yourself', 'u', 'urself'],
-            'you': ['me', 'myself'],
-            'she': ['her', 'she'],
-            'he': ['him', 'he'],
-            'it': ['it'],
-            'they': ['them', 'they']
-        }
-
-        if cmd_base == 'phrase':
-            # Southern / C BS phrase gen
-            phrase_txt = '. '.join([x.strip().capitalize() for x in f'{" ".join(phrases)}'.split('.')])
-        elif cmd_base == 'insult':
-            if target in sum(pronoun_direction.values(), []):
-                # Using pronouns. Try to be smart about this!
-                pronoun = next(iter([k for k, v in pronoun_direction.items() if target in v]))
-                phrase_txt = f"{pronoun.title()} aint nothin but a {' '.join(phrases)}."
-            else:
-                phrase_txt = "{} aint nothin but a {}".format(target, ' '.join(phrases))
-        elif cmd_base == 'compliment':
-            if target in sum(pronoun_direction.values(), []):
-                # Maybe we'll circle back here later and use a smarter way of dealing with pronouns
-                phrase_txt = f"Dear Asshole, {' '.join(phrases)} Viktor."
-            else:
-                phrase_txt = f"Dear {target.title()}, {' '.join(phrases)} <@{user}>"
-        else:
-            phrase_txt = 'lol idk I couldn\'t make out your command :shrugman::shrugman2:'
-        # Before returning, remove any spaces between words and punctutation (and between punctuation itself)
-        return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', phrase_txt)
-
-    def insult(self, df: pd.DataFrame, message: str) -> str:
+    def insult(self, message: str, session: Session) -> str:
         """Insults the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
             return "I can't work like this! I need something to insult!!:ragetype:"
+        # Extract commands and other info from the message
+        grp, n_times, target = self._message_extractor(message=message, cmd='insult', default_group='standard')
+        # Extract all related words from db
+        words = session.query(TableInsults).filter(TableInsults.type == grp).all()
+        if len(words) == 0:
+            # No such type. Inform user about proper types
+            available_sets = [
+                x.type.name for x in session.query(TableInsults.type).group_by(TableInsults.type).all()]
+            return f'Cannot find set `{grp}` in the table. ' \
+                   f'Available sets: `{"`, `".join(available_sets)}`'
+        # Organize the words by stage
+        # Build a dictionary of the query results, organized by stage
+        word_dict = self._word_result_organiser(word_results=words)
+        # Use the word dict to randomly select words from each stage
+        word_lists = []  # type: List[List[str]]
+        for i in range(n_times):
+            word_lists.append(self._phrase_builder(word_dict=word_dict))
+        # Build the phrases
+        if target in sum(self.pronoun_direction.values(), []):
+            # Using pronouns. Try to be smart about this!
+            pronoun = next(iter([k for k, v in self.pronoun_direction.items() if target in v]))
+            p_txt = f"{pronoun.title()} aint nothin but a {' and a '.join([' '.join(x) for x in word_lists])}."
+        else:
+            p_txt = f"{target.title()} aint nothin but a {' and a '.join([' '.join(x) for x in word_lists])}."
+        return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', p_txt)
 
-        resp = self._phrase_action_handler(df, message_split[0], message, 'insults', 'standard')
-        return resp
-
-    def phrase_generator(self, df: pd.DataFrame, message: str) -> str:
+    def phrase_generator(self, message: str, session: Session) -> str:
         """Generates a phrase based on a table of work fragments"""
-        message_split = message.split()
-        resp = self._phrase_action_handler(df, message_split[0], message, 'phrases', 'south')
-        return f'{resp}'
+        # Extract commands and other info from the message
+        grp, n_times, target = self._message_extractor(message=message, cmd='phrase', default_group='standard')
+        # Extract all related words from db
+        words = session.query(TablePhrases).filter(TablePhrases.type == grp).all()
+        if len(words) == 0:
+            # No such type. Inform user about proper types
+            available_sets = [
+                x.type.name for x in session.query(TablePhrases.type).group_by(TablePhrases.type).all()]
+            return f'Cannot find set `{grp}` in the table. ' \
+                   f'Available sets: `{"`, `".join(available_sets)}`'
+        # Organize the words by stage
+        # Build a dictionary of the query results, organized by stage
+        word_dict = self._word_result_organiser(word_results=words)
+        # Use the word dict to randomly select words from each stage
+        word_lists = []     # type: List[List[str]]
+        for i in range(n_times):
+            word_lists.append(self._phrase_builder(word_dict=word_dict))
+        # Build the phrases
+        if grp == 'standard':
+            processed = []
+            for phrs in word_lists:
+                article = 'an' if phrs[-1] in 'aeiou' else 'a'
+                processed.append('Well {1} my {2} and {3} {0} {4}.'.format(article, *phrs))
+        else:
+            processed = [' '.join(x) for x in word_lists]
+        phrase_txt = '. '.join([x.strip().capitalize() for x in f'{" ".join(processed)}'.split('.')])
+        return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', phrase_txt)
 
-    def compliment(self, df: pd.DataFrame, message: str, user: str) -> str:
+    def compliment(self, message: str, user: str, session: Session) -> str:
         """Insults the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
             return "I can't work like this! I need something to compliment!!:ragetype:"
 
-        resp = self._phrase_action_handler(df, message_split[0], message, 'compliments', 'std', user)
-        return resp
+        # Extract commands and other info from the message
+        grp, n_times, target = self._message_extractor(message=message, cmd='compliment', default_group='standard')
+        # Extract all related words from db
+        words = session.query(TableCompliments).filter(TableCompliments.type == grp).all()
+        if len(words) == 0:
+            # No such type. Inform user about proper types
+            available_sets = [
+                x.type.name for x in session.query(TableCompliments.type).group_by(TableCompliments.type).all()]
+            return f'Cannot find set `{grp}` in the table. ' \
+                   f'Available sets: `{"`, `".join(available_sets)}`'
+        # Organize the words by stage
+        # Build a dictionary of the query results, organized by stage
+        word_dict = self._word_result_organiser(word_results=words)
+        # Use the word dict to randomly select words from each stage
+        word_lists = []  # type: List[List[str]]
+        for i in range(n_times):
+            word_lists.append(self._phrase_builder(word_dict=word_dict))
+        # Build the phrases
+        if target in sum(self.pronoun_direction.values(), []):
+            # Maybe we'll circle back here later and use a smarter way of dealing with pronouns
+            phrase_txt = f"Dear Asshole, {' and '.join([' '.join(x) for x in word_lists])} Viktor."
+        else:
+            phrase_txt = f"Dear {target.title()}, {' and '.join([' '.join(x) for x in word_lists])} <@{user}>"
+        return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', phrase_txt)
