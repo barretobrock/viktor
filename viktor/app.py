@@ -90,7 +90,7 @@ def handle_cron_new_emojis():
     """Check for newly uploaded emojis (triggered by cron task that sends POST req every 10 mins)"""
     # Check emojis uploaded (every 60 mins)
     # This url is hit in crontab as such:
-    #       0 * * * * /opt/local/bin/curl -X POST https://YOUR_APP/cron/new_emojis
+    #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/new_emojis
     session = Session()
     now = datetime.utcnow()
     interval = (now - timedelta(minutes=60))
@@ -102,7 +102,9 @@ def handle_cron_new_emojis():
         for i in range(0, len(emojis), 10):
             emoji_str += f"{''.join(emojis[i:i + 10])}\n"
         msg_block = [
-            bkb.make_context_section('Incoming emojis that were added in the last 10 min!'),
+            bkb.make_context_section([
+                bkb.markdown_section('Incoming emojis that were added in the last 60 min!')
+            ]),
         ]
         Bot.st.send_message(Bot.emoji_channel, 'new emoji report', blocks=msg_block)
         Bot.st.send_message(Bot.emoji_channel, emoji_str)

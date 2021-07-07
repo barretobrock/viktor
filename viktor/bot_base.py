@@ -128,20 +128,20 @@ class Viktor:
                 'pattern': 'show (roles|doo[td]ies)',
                 'cat': cat_org,
                 'desc': 'Shows current roles of all the wonderful workers of OKR',
-                'value': [self.build_role_txt, 'channel'],
+                'response': [self.build_role_txt, 'channel'],
             },
             r'^update doo[td]ies': {
                 'pattern': 'update dooties [-u @user]',
                 'cat': cat_org,
                 'desc': 'Updates OKR roles of user (or other user). Useful during a quick reorg. '
                         '\n\t\t\t_NOTE: You only have to tag a user if it\'s not you._',
-                'value': [self.update_roles, 'user', 'channel', 'raw_message', 'match_pattern'],
+                'response': [self.update_roles, 'user', 'channel', 'raw_message', 'match_pattern'],
             },
             r'^show my (role|doo[td]ie)$': {
                 'pattern': 'show my (role|doo[td]ie)',
                 'cat': cat_org,
                 'desc': 'Shows your current role as of the last reorg.',
-                'value': [self.build_role_txt, 'channel', 'user'],
+                'response': [self.build_role_txt, 'channel', 'user'],
             },
             r'^channel stats$': {
                 'pattern': 'channel stats',
@@ -179,6 +179,12 @@ class Viktor:
                         'of the compliments in Viktor\'s spreadsheet',
                 'response': [self.compliment, 'raw_message', 'user'],
             },
+            r'^facts': {
+                'pattern': 'facts',
+                'cat': cat_notsouseful,
+                'desc': 'Generates a fact',
+                'response': [self.facts],
+            },
             r'^emoji[s]? like': {
                 'pattern': 'emoji[s] like <regex-pattern>',
                 'cat': cat_useful,
@@ -189,7 +195,7 @@ class Viktor:
                 'pattern': 'refresh emojis',
                 'cat': cat_useful,
                 'desc': 'Makes Viktor aware of emojis that have been uploaded since his last reboot.',
-                'value': [self.refresh_emojis],
+                'response': [self.refresh_emojis],
             },
             r'^uwu': {
                 'pattern': 'uwu [-l <1 or 2>] <text_to_uwu>',
@@ -341,8 +347,8 @@ class Viktor:
 
     def get_bootup_msg(self) -> List[Dict]:
         return [bkb.make_context_section([
-            f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!",
-            f"(updated {self.update_date})"
+            bkb.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!"),
+            bkb.markdown_section(f"(updated {self.update_date})")
         ])]
 
     def generate_intro(self):
@@ -360,7 +366,9 @@ class Viktor:
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
         notify_block = [
-            bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
+            bkb.make_context_section([
+                bkb.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
+            ])
         ]
         self.st.message_test_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
@@ -386,7 +394,7 @@ class Viktor:
 
         if 'buttongame' in action_id:
             # Button game stuff
-            game_value = action_value(' ')[1]
+            game_value = action_value.split('-')[1]
             if game_value.isnumeric():
                 game_value = int(game_value) - 500
                 resp = self.update_user_ltips(channel, self.approved_users[0], f'-u <@{user}> {game_value}')
@@ -416,7 +424,7 @@ class Viktor:
 
     @staticmethod
     def show_onboring_link() -> str:
-        return f'https://docs.google.com/document/d/{vik_app.vik_creds.onboring_key}/edit?usp=sharing'
+        return f'https://docs.google.com/document/d/{vik_app.vik_creds.onboarding_key}/edit?usp=sharing'
 
     def get_channel_stats(self, channel: str) -> str:
         """Collects posting stats for a given channel"""
@@ -598,12 +606,16 @@ class Viktor:
 
         unit_txt = '\n'.join(units)
         return [
-            bkb.make_context_section('WFH Epoch'),
+            bkb.make_context_section([
+                bkb.markdown_section('WFH Epoch')
+            ]),
             bkb.make_block_section(
                 f'Current WFH epoch time is *`{wfh_secs:.0f}`*.'
                 f'\n ({diff})',
             ),
-            bkb.make_context_section(f'{unit_txt}')
+            bkb.make_context_section([
+                bkb.markdown_section(f'{unit_txt}')
+            ])
         ]
 
     # Misc. methods
@@ -652,9 +664,9 @@ class Viktor:
 
         blocks = [
             bkb.make_context_section([
-                'Try your luck and guess which button is hiding the LTITs!!',
-                f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
-                f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.'
+                bkb.markdown_section('Try your luck and guess which button is hiding the LTITs!!'
+                                     f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
+                                     f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.')
             ]),
             bkb.make_action_button_group(btn_blocks)
         ]
@@ -714,7 +726,8 @@ class Viktor:
         if block_return:
             return [
                 bkb.make_context_section([
-                    '*`{src_name} -> {tgt_name}`*\t src lang confidence:\t{conf:.1%}'.format(**lang_dict)
+                    bkb.markdown_section('*`{src_name} -> {tgt_name}`*\t '
+                                         'src lang confidence:\t{conf:.1%}'.format(**lang_dict))
                 ]),
                 bkb.make_block_divider(),
                 bkb.make_block_section(lang_dict['translation'])
@@ -827,6 +840,9 @@ class Viktor:
     def compliment(self, raw_message: str, user: str) -> str:
         return self.pb.compliment(raw_message, user, session=self.session)
 
+    def facts(self):
+        return self.pb.facts(session=self.session)
+
     # OKR Methods
     # ------------------------------------------------
     def onboarding_docs(self) -> List[dict]:
@@ -852,7 +868,9 @@ class Viktor:
         final_perks = self._build_perks_list(perks)
         return [
             bkb.make_header('OKR Perks!'),
-            bkb.make_context_section('you\'ll never see anything better, trust us!'),
+            bkb.make_context_section([
+                bkb.markdown_section('you\'ll never see anything better, trust us!')
+            ]),
             bkb.make_block_section([p for p in final_perks])
         ]
 
@@ -890,7 +908,9 @@ class Viktor:
         final_perks = self._build_perks_list(perks)
         return [
             bkb.make_header(f'Perks for <@{user}>!'),
-            bkb.make_context_section('you\'ll _really_ never see anything better, trust us!'),
+            bkb.make_context_section([
+                bkb.markdown_section('you\'ll _really_ never see anything better, trust us!')
+            ]),
             bkb.make_block_section('Here are the _amazing_ perks you have unlocked!!'),
             bkb.make_block_section([p for p in final_perks]),
             bkb.make_block_section(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
@@ -972,7 +992,9 @@ class Viktor:
             # Printing roles for everyone
             roles_output += [
                 bkb.make_header('OKR Roles'),
-                bkb.make_context_section('_(as of last reorg)_')
+                bkb.make_context_section([
+                    bkb.markdown_section('_(as of last reorg)_')
+                ])
             ]
             # Iterate through roles, print them out
             for u in self.session.query(TableUsers).all():

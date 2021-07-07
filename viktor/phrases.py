@@ -1,10 +1,11 @@
 import re
+import requests
 import string
-from random import randint
+from random import randint, choice
 from typing import List, Optional, Dict, Union, Tuple
 from sqlalchemy.orm import Session
-from slacktools import SlackBotBase
-from .model import TableAcronyms, TablePhrases, TableCompliments, TableInsults
+from slacktools import SlackBotBase, BlockKitBuilder as bkb
+from .model import TableAcronyms, TablePhrases, TableCompliments, TableInsults, TableFacts
 
 
 class PhraseBuilders:
@@ -120,6 +121,9 @@ class PhraseBuilders:
         message_split = message.split()
         if len(message_split) <= 1:
             return "I can't work like this! I need something to insult!!:ragetype:"
+        if all([x in message.lower() for x in ['me', 'hard']]):
+            # Generate better insult
+            return self.get_evil_insult()
         # Extract commands and other info from the message
         grp, n_times, target = self._message_extractor(message=message, cmd='insult', default_group='standard')
         # Extract all related words from db
@@ -177,7 +181,7 @@ class PhraseBuilders:
         return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', phrase_txt)
 
     def compliment(self, message: str, user: str, session: Session) -> str:
-        """Insults the user at their request"""
+        """Compliments the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
             return "I can't work like this! I need something to compliment!!:ragetype:"
@@ -206,3 +210,21 @@ class PhraseBuilders:
         else:
             phrase_txt = f"Dear {target.title()}, {' and '.join([' '.join(x) for x in word_lists])} <@{user}>"
         return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', phrase_txt)
+
+    @staticmethod
+    def get_evil_insult() -> Optional[str]:
+        resp = requests.get('https://evilinsult.com/generate_insult.php?lang=en&type=json')
+        if resp.status_code == 200:
+            return resp.json().get('insult')
+
+    @staticmethod
+    def facts(session: Session) -> List[Dict]:
+        """Gives the user a random fact at their request"""
+        # Extract all related words from db
+        facts = session.query(TableFacts).all()
+        # Select random fact
+        randfact = choice(facts)
+        return [
+            bkb.make_header(f'Official fact #{randfact.id}'),
+            bkb.make_block_section(randfact.text)
+        ]
