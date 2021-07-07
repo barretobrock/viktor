@@ -179,7 +179,7 @@ class Viktor:
                         'of the compliments in Viktor\'s spreadsheet',
                 'response': [self.compliment, 'raw_message', 'user'],
             },
-            r'^facts': {
+            r'^facts?': {
                 'pattern': 'facts',
                 'cat': cat_notsouseful,
                 'desc': 'Generates a fact',
@@ -1000,7 +1000,7 @@ class Viktor:
             for u in self.session.query(TableUsers).all():
                 role = u.role if u.role is not None else 'You take the specifications from the customers, ' \
                                                          'and you bring them down to the software engineers'
-                role_desc = u.desc if u.desc is not None else 'What would you say... you do here?'
+                role_desc = u.role_desc if u.role_desc is not None else 'What would you say... you do here?'
                 roles_output.append(bkb.make_block_section([
                     f'*`{u.name}`*: Level *`{u.level}`* (*`{u.ltits}*` LTITs)\n\t\t*{role}*\n\t\t\t{role_desc}'
                 ]))
@@ -1012,7 +1012,7 @@ class Viktor:
             role = user_obj.role if user_obj.role is not None else 'You take the specifications from the ' \
                                                                    'customers, and you bring them down to the ' \
                                                                    'software engineers.'
-            role_desc = user_obj.desc if user_obj.desc is not None else 'What would you say... you do here?'
+            role_desc = user_obj.role_desc if user_obj.role_desc is not None else 'What would you say... you do here?'
             roles_output.append(bkb.make_block_section([
                 f'*`{user_obj.name}`*: Level *`{user_obj.level}`* (*`{user_obj.ltits}*` LTITs)'
                 f'\n\t\t*{role}*\n\t\t\t{role_desc}'
