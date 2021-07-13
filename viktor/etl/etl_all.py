@@ -1,12 +1,17 @@
 import re
+import time
+from datetime import datetime
 from typing import List, Dict
+import pytz
+from slack.errors import SlackApiError
 from easylogger import Log
 from slacktools import SecretStore, GSheetReader, SlackTools
 from viktor.model import Base, TableEmojis, AcronymTypes, TableAcronyms, TableUsers, TablePerks, \
     ResponseTypes, TableResponses, TableFacts, TableUwu, TableInsults, InsultTypes, TablePhrases, PhraseTypes, \
-    TableCompliments, ComplimentTypes
-from viktor.etl import acronym_tables, emoji_tables, okr_tables, response_tables, user_tables
+    TableCompliments, ComplimentTypes, TableQuotes
+from viktor.etl import acronym_tables, emoji_tables, okr_tables, response_tables, user_tables, quotes_tables
 from viktor.settings import auto_config
+from viktor.utils import collect_pins
 
 
 class ETL:
@@ -31,6 +36,7 @@ class ETL:
         cah_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
         self.gsr = GSheetReader(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
         self.st = SlackTools(credstore, auto_config.BOT_NICKNAME, self.log)
+        self.log.debug('Completed loading services')
 
     def etl_acronyms(self):
         self.log.debug('Working on acronyms...')
@@ -166,12 +172,51 @@ class ETL:
         self.session.commit()
         self.log.debug('Completed response ETL')
 
+    def etl_quotes(self):
+        # Users
+        self.log.debug('Working on quotes...')
+        # First we get all the channels
+        channels = []
+        prev_len = 0
+        channels_resp = self.st.bot.conversations_list(limit=1000)
+        for ch in channels_resp.get('channels'):
+            self.log.debug(f'Adding {ch["name"]}')
+            channels.append({'id': ch['id'], 'name': ch['name']})
+        # Then we iterate through the channels and collect the pins
+        tbl_objs = []
+        for i, chan in enumerate(channels):
+            self.log.debug(f'Working on item {i}')
+            c_name = chan['name']
+            if c_name.startswith('shitpost'):
+                continue
+            c_id = chan['id']
+            self.log.debug(f'Getting pins for channel: {c_name} ({c_id})')
+            try:
+                pins_resp = self.st.bot.pins_list(channel=c_id)
+            except SlackApiError as err:
+                # Check if the error is associated with not being in the channel
+                resp = err.response.get('error')
+                self.log.error(f'Received error response: {resp}')
+                pins_resp = {'items': []}
+            pins = pins_resp.get('items')
+            for pin in pins:
+                tbl_objs.append(collect_pins(pin, session=self.session, log=self.log))
+            # Wait so we don't exceed call limits
+            if prev_len < len(tbl_objs):
+                self.log.debug('Cooling off')
+                time.sleep(3)
+            prev_len = len(tbl_objs)
+        self.session.add_all(tbl_objs)
+        self.log.debug(f'Added {len(tbl_objs)} pins')
+        self.session.commit()
+
 
 if __name__ == '__main__':
-    all_tables = acronym_tables + emoji_tables + response_tables + okr_tables + user_tables
+    all_tables = acronym_tables + emoji_tables + response_tables + okr_tables + user_tables + quotes_tables
     etl = ETL(tables=all_tables)
     etl.etl_acronyms()
     etl.etl_emojis()
     etl.etl_okr_perks()
     etl.etl_okr_users()
+    etl.etl_quotes()
     etl.etl_responses()
