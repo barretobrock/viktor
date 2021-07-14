@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import List, Optional, Union, Dict
 import pandas as pd
 import numpy as np
+import slack.errors
 from sqlalchemy.orm import Session
 from datetime import datetime as dt
 from random import randint, choice
@@ -19,12 +20,13 @@ from .phrases import PhraseBuilders
 from .settings import auto_config
 from .model import TableUsers, TableEmojis, TablePerks, TableUwu, TableResponses
 from .forms import Forms
+from .utils import recursive_uwu
 
 
 class Viktor:
     """Handles messaging to and from Slack API"""
 
-    def __init__(self, parent_log: Log, session: Session):
+    def __init__(self, parent_log: Log):
         """
         Args:
 
@@ -38,8 +40,6 @@ class Viktor:
         self.approved_users = auto_config.ADMINS
         self.version = auto_config.VERSION
         self.update_date = auto_config.UPDATE_DATE
-        # create a session
-        self.session = session
 
         self.ling = Linguistics()
 
@@ -375,20 +375,17 @@ class Viktor:
         self.log.close()
         sys.exit(0)
 
-    def process_slash_command(self, event_dict: Dict, session: Session):
+    def process_slash_command(self, event_dict: Dict):
         """Hands off the slash command processing while also refeshing the session"""
-        self.session = session
         self.st.parse_slash_command(event_dict)
 
-    def process_event(self, event_dict: Dict, session: Session):
+    def process_event(self, event_dict: Dict):
         """Hands off the event data while also refreshing the session"""
-        self.session = session
         self.st.parse_event(event_data=event_dict)
 
     def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict,
-                                session: Session) -> Optional:
+                                ) -> Optional:
         """Handles an incoming action (e.g., when a button is clicked)"""
-        self.session = session
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
 
@@ -410,6 +407,28 @@ class Viktor:
             # Compile all the details together and try to get the emoji uploaded
             url = self.state_store['new-emoji'].get(user).get('url')
             self.add_emoji(user, channel, url=url, new_name=action_value)
+        elif action_dict.get('type') == 'message-shortcut':
+            # Deal  with message shortcuts
+            if action_id == 'uwu':
+                # Uwu the message
+                msg = event_dict.get('message')
+                replaced_blocks = []
+                blocks = msg.get('blocks')
+                channel = event_dict.get('channel').get('id')
+                msg_text = msg.get('text')
+                if blocks is not None:
+                    for i, block in enumerate(blocks):
+                        replaced_blocks.append(recursive_uwu(i, block, replace_func=self.uwu))
+                    # Send message
+                    try:
+                        self.st.send_message(channel, message='uwu',
+                                             blocks=replaced_blocks)
+                    except slack.errors.SlackApiError:
+                        # Most likely because the block was a standard rich text one, which isn't allowed.
+                        #   Fall back to basic text.
+                        self.st.send_message(channel, message=msg_text)
+                else:
+                    self.st.send_message(channel, message=self.uwu(msg_text))
 
     def prebuild_main_menu(self, user_id: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""
@@ -420,7 +439,7 @@ class Viktor:
 
     @staticmethod
     def show_gsheets_link() -> str:
-        return f'https://docs.google.com/spreadsheets/d/{vik_app.vik_creds.viktor_sheet}/'
+        return f'https://docs.google.com/spreadsheets/d/{vik_app.vik_creds.spreadsheet_key}/'
 
     @staticmethod
     def show_onboring_link() -> str:
@@ -479,9 +498,10 @@ class Viktor:
                    '```{}```'.format(len(msgs), self.st.df_to_slack_table(res_df))
         return response
 
-    def refresh_emojis(self) -> List[str]:
+    @staticmethod
+    def refresh_emojis() -> List[str]:
         """Refreshes the list of emojis"""
-        return self.session.query(TableEmojis.name).filter(TableEmojis.is_denylisted == False).all()
+        return vik_app.db.session.query(TableEmojis.name).filter(TableEmojis.is_denylisted == False).all()
 
     def get_emojis_like(self, match_pattern: str, message: str, max_res: int = 500) -> str:
         """Gets emojis matching in the system that match a given regex pattern"""
@@ -623,7 +643,7 @@ class Viktor:
     def sh_response(self) -> str:
         """Responds to SHs"""
         responses = [x.text for x in
-                     self.session.query(TableResponses).filter(TableResponses.type == 'stakeholder').all()]
+                     vik_app.db.session.query(TableResponses).filter(TableResponses.type == 'stakeholder').all()]
         return responses[randint(0, len(responses) - 1)]
 
     def inspirational(self, channel: str):
@@ -757,7 +777,7 @@ class Viktor:
             level = default_lvl
             text = msg.replace('uwu', '').strip()
 
-        chars = [x.graphic for x in self.session.query(TableUwu).all()]
+        chars = [x for x in vik_app.db.session.query(TableUwu.graphic).all()]
 
         if level >= 1:
             # Level 1: Letter replacement
@@ -779,7 +799,7 @@ class Viktor:
             phrase = []
             for word in text.split(' '):
                 roll = randint(1, 10)
-                if roll < 3:
+                if roll < 3 and len(word) > 0:
                     word = f'{word[0]}-{word}'
                 for pattern, pattern_dict in pattern_allowlist.items():
                     if word.startswith(pattern_dict['start']):
@@ -829,19 +849,19 @@ class Viktor:
     # Phrase building methods
     # ------------------------------------------------
     def guess_acronym(self, message: str) -> str:
-        return self.pb.guess_acronym(message, self.session)
+        return self.pb.guess_acronym(message)
 
     def insult(self, message: str) -> str:
-        return self.pb.insult(message, session=self.session)
+        return self.pb.insult(message)
 
     def phrase_generator(self, message: str) -> str:
-        return self.pb.phrase_generator(message, session=self.session)
+        return self.pb.phrase_generator(message)
 
     def compliment(self, raw_message: str, user: str) -> str:
-        return self.pb.compliment(raw_message, user, session=self.session)
+        return self.pb.compliment(raw_message, user)
 
     def facts(self):
-        return self.pb.facts(session=self.session)
+        return self.pb.facts()
 
     # OKR Methods
     # ------------------------------------------------
@@ -864,7 +884,7 @@ class Viktor:
 
     def show_all_perks(self) -> List[Dict]:
         """Displays all the perks"""
-        perks = self.session.query(TablePerks).all()
+        perks = vik_app.db.session.query(TablePerks).all()
         final_perks = self._build_perks_list(perks)
         return [
             bkb.make_header('OKR Perks!'),
@@ -896,7 +916,7 @@ class Viktor:
     def show_my_perks(self, user: str) -> Union[List[Dict], str]:
         """Lists the perks granted at the user's current level"""
         # Get the user's level
-        user_data = self.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
+        user_data = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
         if user_data is None:
             return 'User not found in OKR roles sheet :frowning:'
 
@@ -904,10 +924,10 @@ class Viktor:
         ltits = user_data.ltits
 
         # Get perks
-        perks = self.session.query(TablePerks).filter(TablePerks.level <= level).all()
+        perks = vik_app.db.session.query(TablePerks).filter(TablePerks.level <= level).all()
         final_perks = self._build_perks_list(perks)
         return [
-            bkb.make_header(f'Perks for <@{user}>!'),
+            bkb.make_header(f'Perks for {user_data.name.title()}!'),
             bkb.make_context_section([
                 bkb.markdown_section('you\'ll _really_ never see anything better, trust us!')
             ]),
@@ -931,11 +951,11 @@ class Viktor:
                 # Some people should stay permanently at lvl 1
                 return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
 
-            user_obj = self.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
+            user_obj = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
             if user is None:
                 return f'user <@{user}> not found in HR records... :nervous_peach:'
             user_obj.level += 1
-            self.session.commit()
+            vik_app.db.session.commit()
             self.st.send_message(channel, f'Level for *`{user_obj.name}`* updated to *`{user_obj.level}`*.')
         else:
             return 'No user tagged for update.'
@@ -961,11 +981,11 @@ class Viktor:
                 if not -1000 < ltits < 1000:
                     # Limit the number of ltits that can be distributed at any given time
                     ltits = 1000 if ltits > 1000 else -1000
-                user_obj = self.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
+                user_obj = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
                 if user is None:
                     return f'user <@{user}> not found in HR records... :nervous_peach:'
                 user_obj.ltits += ltits
-                self.session.commit()
+                vik_app.db.session.commit()
                 self.st.send_message(
                     channel, f'LTITs for  *`{user_obj.name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.')
             else:
@@ -997,7 +1017,7 @@ class Viktor:
                 ])
             ]
             # Iterate through roles, print them out
-            for u in self.session.query(TableUsers).all():
+            for u in vik_app.db.session.query(TableUsers).all():
                 role = u.role if u.role is not None else 'You take the specifications from the customers, ' \
                                                          'and you bring them down to the software engineers'
                 role_desc = u.role_desc if u.role_desc is not None else 'What would you say... you do here?'
@@ -1006,7 +1026,7 @@ class Viktor:
                 ]))
         else:
             # Printing role for an individual user
-            user_obj = self.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
+            user_obj = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
             if user is None:
                 return f'user <@{user}> not found in HR records... :nervous_peach:'
             role = user_obj.role if user_obj.role is not None else 'You take the specifications from the ' \

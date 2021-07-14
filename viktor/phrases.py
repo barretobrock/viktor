@@ -3,8 +3,8 @@ import requests
 import string
 from random import randint, choice
 from typing import List, Optional, Dict, Union, Tuple
-from sqlalchemy.orm import Session
 from slacktools import SlackBotBase, BlockKitBuilder as bkb
+import viktor.app as vik_app
 from .model import TableAcronyms, TablePhrases, TableCompliments, TableInsults, TableFacts
 
 
@@ -56,7 +56,7 @@ class PhraseBuilders:
         """
         return self.st.parse_flags_from_command(message)['cmd'].replace(cmd_base, '').strip()
 
-    def guess_acronym(self, message: str, session: Session) -> str:
+    def guess_acronym(self, message: str) -> str:
         """Tries to guess an acronym from a message"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -72,11 +72,11 @@ class PhraseBuilders:
         n_times = self.st.get_flag_from_command(message, flags=['n'], default='3')
         n_times = int(n_times) if n_times.isnumeric() else 3
         # Select the acronym list to use, verify that we have some words in that group
-        acronyms = session.query(TableAcronyms).filter(TableAcronyms.type == acronym_group).all()
+        acronyms = vik_app.db.session.query(TableAcronyms).filter(TableAcronyms.type == acronym_group).all()
         if len(acronyms) == 0:
             # No such type. Inform user about proper types
             available_sets = [
-                x.type.name for x in session.query(TableAcronyms.type).group_by(TableAcronyms.type).all()]
+                x.type.name for x in vik_app.db.session.query(TableAcronyms.type).group_by(TableAcronyms.type).all()]
             return f'Cannot find set `{acronym_group}` in the table. ' \
                    f'Available sets: `{"`, `".join(available_sets)}`'
 
@@ -116,7 +116,7 @@ class PhraseBuilders:
         target = self._get_target(message, cmd)
         return phrase_group, n_times, target
 
-    def insult(self, message: str, session: Session) -> str:
+    def insult(self, message: str) -> str:
         """Insults the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -127,11 +127,11 @@ class PhraseBuilders:
         # Extract commands and other info from the message
         grp, n_times, target = self._message_extractor(message=message, cmd='insult', default_group='standard')
         # Extract all related words from db
-        words = session.query(TableInsults).filter(TableInsults.type == grp).all()
+        words = vik_app.db.session.query(TableInsults).filter(TableInsults.type == grp).all()
         if len(words) == 0:
             # No such type. Inform user about proper types
             available_sets = [
-                x.type.name for x in session.query(TableInsults.type).group_by(TableInsults.type).all()]
+                x.type.name for x in vik_app.db.session.query(TableInsults.type).group_by(TableInsults.type).all()]
             return f'Cannot find set `{grp}` in the table. ' \
                    f'Available sets: `{"`, `".join(available_sets)}`'
         # Organize the words by stage
@@ -150,16 +150,16 @@ class PhraseBuilders:
             p_txt = f"{target.title()} aint nothin but a {' and a '.join([' '.join(x) for x in word_lists])}."
         return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', p_txt)
 
-    def phrase_generator(self, message: str, session: Session) -> str:
+    def phrase_generator(self, message: str) -> str:
         """Generates a phrase based on a table of work fragments"""
         # Extract commands and other info from the message
         grp, n_times, target = self._message_extractor(message=message, cmd='phrase', default_group='standard')
         # Extract all related words from db
-        words = session.query(TablePhrases).filter(TablePhrases.type == grp).all()
+        words = vik_app.db.session.query(TablePhrases).filter(TablePhrases.type == grp).all()
         if len(words) == 0:
             # No such type. Inform user about proper types
             available_sets = [
-                x.type.name for x in session.query(TablePhrases.type).group_by(TablePhrases.type).all()]
+                x.type.name for x in vik_app.db.session.query(TablePhrases.type).group_by(TablePhrases.type).all()]
             return f'Cannot find set `{grp}` in the table. ' \
                    f'Available sets: `{"`, `".join(available_sets)}`'
         # Organize the words by stage
@@ -180,7 +180,7 @@ class PhraseBuilders:
         phrase_txt = '. '.join([x.strip().capitalize() for x in f'{" ".join(processed)}'.split('.')])
         return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', phrase_txt)
 
-    def compliment(self, message: str, user: str, session: Session) -> str:
+    def compliment(self, message: str, user: str) -> str:
         """Compliments the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -189,11 +189,11 @@ class PhraseBuilders:
         # Extract commands and other info from the message
         grp, n_times, target = self._message_extractor(message=message, cmd='compliment', default_group='standard')
         # Extract all related words from db
-        words = session.query(TableCompliments).filter(TableCompliments.type == grp).all()
+        words = vik_app.db.session.query(TableCompliments).filter(TableCompliments.type == grp).all()
         if len(words) == 0:
             # No such type. Inform user about proper types
             available_sets = [
-                x.type.name for x in session.query(TableCompliments.type).group_by(TableCompliments.type).all()]
+                x.type.name for x in vik_app.db.session.query(TableCompliments.type).group_by(TableCompliments.type).all()]
             return f'Cannot find set `{grp}` in the table. ' \
                    f'Available sets: `{"`, `".join(available_sets)}`'
         # Organize the words by stage
@@ -218,10 +218,10 @@ class PhraseBuilders:
             return resp.json().get('insult')
 
     @staticmethod
-    def facts(session: Session) -> List[Dict]:
+    def facts() -> List[Dict]:
         """Gives the user a random fact at their request"""
         # Extract all related words from db
-        facts = session.query(TableFacts).all()
+        facts = vik_app.db.session.query(TableFacts).all()
         # Select random fact
         randfact = choice(facts)
         return [

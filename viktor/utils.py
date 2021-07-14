@@ -8,6 +8,9 @@ from .model import TableUsers, TableQuotes
 
 def collect_pins(pin_dict: Dict, session: Session, log: Log) -> TableQuotes:
     """Attempts to load pinned message into the quotes db"""
+    if pin_dict.get('message') is None:
+        # Receiving a pin message in-prod is different than when using the historical response from /api/pin_list
+        pin_dict = pin_dict.get('item')
     author_sid = pin_dict.get('message').get('user')
     author_name = pin_dict.get('message').get('username')
     if author_sid is None:
@@ -44,3 +47,22 @@ def collect_pins(pin_dict: Dict, session: Session, log: Log) -> TableQuotes:
                                             pytz.timezone('US/Central')),
         pin_date=datetime.fromtimestamp(pin_dict.get('created'), pytz.timezone('US/Central'))
     )
+
+
+TEXT_KEYS = ['text']
+
+
+def recursive_uwu(key, val, replace_func):
+    """Iterates through a nested dict, replaces text areas with uwu"""
+    if isinstance(val, dict):
+        items = val.items()
+    elif isinstance(val, (list, tuple)):
+        items = enumerate(val)
+    else:
+        if isinstance(key, str) and key in TEXT_KEYS:
+            return replace_func(val)
+        return val
+
+    for k, v in items:
+        val[k] = recursive_uwu(k, v, replace_func)
+    return val
