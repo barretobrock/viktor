@@ -26,6 +26,10 @@ class Common(object):
     TEST_CHANNEL = 'CM376Q90F'
     EMOJI_CHANNEL = 'CLWCPQ2TV'
     GENERAL_CHANNEL = 'CMEND3W3H'
+    IMPO_CHANNEL = 'CNPADBLBF'
+    CAH_CHANNEL = 'CMPV3K8AE'
+    # Prevent automated activity from occurring in these channels
+    DENY_LIST_CHANNELS = [IMPO_CHANNEL, CAH_CHANNEL]
 
 
 class Development(Common):

@@ -157,6 +157,9 @@ def handle_cron_profile_update():
 @bot_events.on('reaction_added')
 def reaction(event_data: dict):
     event = event_data['event']
+    channel = event['item']['channel']
+    if channel in auto_config.DENY_LIST_CHANNELS:
+        return
     if event['user'] not in [Bot.bot_id, Bot.user_id]:
         # Keep from reacting to own reaction
         emojis = db.session.query(TableEmojis).all()
@@ -164,7 +167,7 @@ def reaction(event_data: dict):
         try:
             Bot.bot.reactions_add(
                 name=random_emoji.name,
-                channel=event['item']['channel'],
+                channel=channel,
                 timestamp=event['item']['ts']
             )
         except Exception as e:
