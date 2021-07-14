@@ -426,7 +426,7 @@ class Viktor:
                     except slack.errors.SlackApiError:
                         # Most likely because the block was a standard rich text one, which isn't allowed.
                         #   Fall back to basic text.
-                        self.st.send_message(channel, message=msg_text)
+                        self.st.send_message(channel, message=self.uwu(msg_text))
                 else:
                     self.st.send_message(channel, message=self.uwu(msg_text))
 
