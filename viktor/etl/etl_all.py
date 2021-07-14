@@ -178,14 +178,14 @@ class ETL:
         # First we get all the channels
         channels = []
         prev_len = 0
-        channels_resp = self.st.bot.conversations_list(limit=1000)
+        channels_resp = self.st.bot.conversations_list(limit=1000, types='public_channel,private_channel')
         for ch in channels_resp.get('channels'):
             self.log.debug(f'Adding {ch["name"]}')
             channels.append({'id': ch['id'], 'name': ch['name']})
         # Then we iterate through the channels and collect the pins
         tbl_objs = []
         for i, chan in enumerate(channels):
-            self.log.debug(f'Working on item {i}')
+            self.log.debug(f'Working on channel {i}/{len(channels)}')
             c_name = chan['name']
             if c_name.startswith('shitpost'):
                 continue
