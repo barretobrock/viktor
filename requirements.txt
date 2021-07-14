@@ -1,10 +1,12 @@
 easylogger
 Flask>=1.1.2
+Flask-SQLAlchemy
 googletrans
 lxml
 numpy
 pandas
 pykeepass
+pytz
 requests>=2.23.0
 slacktools>=0.0.5
 slackeventsapi==2.1.0
