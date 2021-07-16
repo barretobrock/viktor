@@ -1,7 +1,6 @@
 import json
 import signal
 import requests
-import sqlite3
 from datetime import datetime, timedelta
 from random import randint, choice
 from flask import Flask, request, make_response

@@ -1,6 +1,5 @@
 from random import choice
 from typing import List, Dict
-from sqlalchemy.orm import Session
 from slacktools import BlockKitBuilder as bkb, SlackTools
 
 
@@ -37,12 +36,49 @@ class Forms:
         return [bkb.make_plaintext_input(label='Insert emoji URL here uwu', action_id='new-emoji-p1')]
 
     @staticmethod
-    def build_new_emoji_form_p2(url: str) -> List[Dict]:
+    def build_new_emoji_form_p2(url: str, suggested_name: str) -> List[Dict]:
         """Builds the second part to the new game form with Block Kit"""
         return [
             bkb.make_image_section_with_text('Here\'s how your emoji will look...', image_url=url,
                                              alt_text='emoji'),
-            bkb.make_plaintext_input(label='Type the name of the emoji without ":"', action_id='new-emoji-p2'),
+            bkb.make_plaintext_input(label='Type the name of the emoji without ":"', initial_value=suggested_name,
+                                     action_id='new-emoji-p2'),
+            bkb.make_action_button_group([
+                bkb.make_action_button('Cancel!!!', value='cancel', action_id='new-emoji-cancel',
+                                       danger_style=True)
+            ])
+        ]
+
+    @staticmethod
+    def build_ifact_input_form_p1() -> List[Dict]:
+        """Intakes a link to the new emoji"""
+
+        return [bkb.make_plaintext_input(label='Add fact here!', action_id='new-ifact')]
+
+    @staticmethod
+    def build_role_input_form_p1(existing_title: str) -> List[Dict]:
+        """Intakes a link to the new emoji"""
+
+        return [
+            bkb.make_header('Form 420-W: Self-professed ReOrg Pending Approval from Viktor, Part 1'),
+            bkb.make_plaintext_input(label='What\'s your desired new title here at OKR?', action_id='new-role-p1',
+                                     initial_value=existing_title, multiline=True),
+            bkb.make_action_button_group([
+                bkb.make_action_button('Cancel!!!', value='cancel', action_id='new-emoji-cancel',
+                                       danger_style=True)
+            ])
+        ]
+
+    @staticmethod
+    def build_role_input_form_p2(title: str, existing_desc: str) -> List[Dict]:
+        """Intakes a link to the new emoji"""
+
+        return [
+            bkb.make_header('Form 420-W: Self-professed ReOrg Pending Approval from Viktor, Part 2'),
+            bkb.make_block_section(':uwupolice:*Your new title*:'),
+            bkb.make_block_section(title),
+            bkb.make_plaintext_input(label='Now, Describe your new title - like, what do you _really_ do??',
+                                     action_id='new-role-p2', initial_value=existing_desc, multiline=True),
             bkb.make_action_button_group([
                 bkb.make_action_button('Cancel!!!', value='cancel', action_id='new-emoji-cancel',
                                        danger_style=True)

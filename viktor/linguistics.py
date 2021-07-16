@@ -4,9 +4,10 @@ import re
 import requests
 import numpy as np
 import urllib.parse as parse
-from typing import Optional
+from typing import Optional, List, Union, Dict, Tuple
 from io import StringIO
 from lxml import etree
+from slacktools import BlockKitBuilder as bkb
 
 
 class Linguistics:
@@ -29,34 +30,45 @@ class Linguistics:
         return tree
 
     @classmethod
-    def get_etymology(cls, message: str, pattern: str):
+    def get_etymology(cls, message: str, pattern: str) -> Union[str, List[Dict]]:
         """Grabs the etymology of a word from Etymonline"""
+        def extract_text(parent_elem: etree.ElementBase, xpath_str: str) -> str:
+            final_results = []
+            elems = parent_elem.xpath(xpath_str)
+            for elem in elems:
+                for node in elem.iter():
+                    if node.tag == 'p' and len(final_results) > 0:
+                        final_results.append('\n')
+                    for item in [node.text, node.tail]:
+                        is_tail = item == node.tail
+                        if item is not None and item.strip() != '':
+                            item = item.strip()
+                            if node.tag == 'span' and not is_tail:
+                                final_results.append(f'_{item}_')
+                            elif node.tag == 'blockquote':
+                                final_results.append(f'\n> {item}')
+                            else:
+                                final_results.append(item)
+            return ' '.join(final_results)
 
-        def get_definition_name(res: etree.ElementBase) -> str:
-            item_str = ''
-            for elem in res.xpath('object/a'):
-                for x in elem.iter():
-                    for item in [x.text, x.tail]:
-                        if item is not None:
-                            if item.strip() != '':
-                                item_str += f' {item}'
-            return item_str.strip()
+        def get_title_and_desc(res: etree.ElementBase) -> Tuple[str, str]:
+            title = extract_text(res, './div/a')
+            text = extract_text(res, './div/section')
+            return title, text
 
         word = re.sub(pattern, '', message).strip()
 
         url = f'{cls.ETY_SEARCH}?q={parse.quote(word)}'
         content = cls._prep_for_xpath(url)
-        results = content.xpath('//div[contains(@class, "word--C9UPa")]')
-        output = ':word:\n'
+        results = content.xpath('//div[contains(@class, "word--C9UPa")]')[:3]
+        output = []
         if len(results) > 0:
+            output.append(bkb.make_header(f'Etymology of `{word}`'))
             for result in results:
-                name = get_definition_name(result)
-                if word in name:
-                    desc = ' '.join([x for elem in result.xpath('object/section') for x in elem.itertext()])
-                    desc = ' '.join([f'_{x}_' for x in desc.split('\n') if x.strip() != ''])
-                    output += f'*`{name}`*:\n{desc}\n'
+                title, text = get_title_and_desc(result)
+                output.append(bkb.make_block_section([f'*`{title}`*', text]))
 
-        if output != '':
+        if len(output) > 0:
             return output
         else:
             return f'No etymological data found for `{word}`.'

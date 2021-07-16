@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import os
 import re
 import string
 import sys
 import requests
 from datetime import datetime
 from typing import List, Optional, Union, Dict
+from urllib.parse import urlparse
 import pandas as pd
 import numpy as np
 import slack.errors
-from sqlalchemy.orm import Session
 from datetime import datetime as dt
 from random import randint, choice
 from slacktools import SlackBotBase, BlockKitBuilder as bkb
 from easylogger import Log
 import viktor.app as vik_app
 from .linguistics import Linguistics
-from .phrases import PhraseBuilders
+from .phrases import PhraseBuilders, recursive_uwu
 from .settings import auto_config
-from .model import TableUsers, TableEmojis, TablePerks, TableUwu, TableResponses
+from .model import TableUsers, TableEmojis, TablePerks, TableResponses, TableFacts, FactTypes
 from .forms import Forms
-from .utils import recursive_uwu
 
 
 class Viktor:
@@ -40,8 +40,6 @@ class Viktor:
         self.approved_users = auto_config.ADMINS
         self.version = auto_config.VERSION
         self.update_date = auto_config.UPDATE_DATE
-
-        self.ling = Linguistics()
 
         # Begin loading and organizing commands
         # Command categories
@@ -106,36 +104,17 @@ class Viktor:
                 'desc': '_Really_ basic response here.',
                 'response': 'woof',
             },
-            r'^translate that': {
-                'pattern': 'translate that <target_lang_code>',
-                'cat': cat_lang,
-                'desc': 'Translate the text immediately above this command.',
-                'response': [self.translate_that, 'channel', 'ts', 'message', 'match_pattern'],
-            },
-            r'^translate (in)?to': {
-                'pattern': 'translate to <target_lang_code>',
-                'cat': cat_lang,
-                'desc': 'Translates the text to the target language',
-                'response': [self.translate_anything, 'message', 'match_pattern'],
-            },
-            r'^uwu that$': {
-                'pattern': 'uwu that',
-                'cat': cat_notsouseful,
-                'desc': 'Uwu the text immediately above this command.',
-                'response': [self.uwu_that, 'channel', 'ts'],
-            },
             r'^show (roles|doo[td]ies)$': {
                 'pattern': 'show (roles|doo[td]ies)',
                 'cat': cat_org,
                 'desc': 'Shows current roles of all the wonderful workers of OKR',
                 'response': [self.build_role_txt, 'channel'],
             },
-            r'^update doo[td]ies': {
-                'pattern': 'update dooties [-u @user]',
+            r'^update (role|doo[td]ies)': {
+                'pattern': 'update dooties',
                 'cat': cat_org,
-                'desc': 'Updates OKR roles of user (or other user). Useful during a quick reorg. '
-                        '\n\t\t\t_NOTE: You only have to tag a user if it\'s not you._',
-                'response': [self.update_roles, 'user', 'channel', 'raw_message', 'match_pattern'],
+                'desc': 'Updates OKR roles of user (or other user). Useful during a lightning reorg.',
+                'response': [self.new_role_form_p1, 'user', 'channel'],
             },
             r'^show my (role|doo[td]ie)$': {
                 'pattern': 'show my (role|doo[td]ie)',
@@ -149,20 +128,32 @@ class Viktor:
                 'desc': 'Get a leaderboard of the last 1000 messages posted in the channel',
                 'response': [self.get_channel_stats, 'channel'],
             },
+            r'^dadjoke': {
+                'pattern': 'dadjoke',
+                'cat': cat_notsouseful,
+                'desc': 'A dadjoke',
+                'response': [PhraseBuilders.dadjoke],
+            },
+            r'^(diddle my brain|affirmation)': {
+                'pattern': 'Positive affirmation',
+                'cat': cat_notsouseful,
+                'desc': 'A positive affirmation',
+                'response': [PhraseBuilders.affirmation],
+            },
             r'^(ag|acro[-]?guess)': {
                 'pattern': '(acro-guess|ag) <acronym> [-(group|g) <group>, -n <guess-n-times>]',
                 'cat': cat_notsouseful,
                 'desc': 'There are RBNs of TLAs at OKR. This tries RRRRH to guess WTF they mean IRL. '
                         '\n\t\t\tThe optional group name corresponds to the column name '
                         'of the acronyms in Viktor\'s spreadsheet',
-                'response': [self.guess_acronym, 'message'],
+                'response': [PhraseBuilders.guess_acronym, 'message'],
             },
             r'^ins[ul]{2}t': {
                 'pattern': 'insult <me|thing|person> [-(group|g) <group>]',
                 'cat': cat_notsouseful,
                 'desc': 'Generates an insult. The optional group name corresponds to the column name '
                         'of the insults in Viktor\'s spreadsheet',
-                'response': [self.insult, 'message'],
+                'response': [PhraseBuilders.insult, 'message'],
             },
             r'^phrases?': {
                 'pattern': 'phrase(s) [-(group|g) <group>, -n <number-of-cycles>]',
@@ -170,20 +161,32 @@ class Viktor:
                 'desc': 'Generates an phrase from a collection of words. The optional group name '
                         'corresponds to the cluster of column names in the "phrases" tab '
                         'in Viktor\'s spreadsheet',
-                'response': [self.phrase_generator, 'message'],
+                'response': [PhraseBuilders.phrase_generator, 'message'],
             },
             r'^compliment': {
                 'pattern': 'compliment <thing|person> [-(group|g) <group>]',
                 'cat': cat_notsouseful,
                 'desc': 'Generates a :q:compliment:q:. The optional group name corresponds to the column name '
                         'of the compliments in Viktor\'s spreadsheet',
-                'response': [self.compliment, 'raw_message', 'user'],
+                'response': [PhraseBuilders.compliment, 'raw_message', 'user'],
             },
             r'^facts?': {
                 'pattern': 'facts',
                 'cat': cat_notsouseful,
                 'desc': 'Generates a fact',
                 'response': [self.facts],
+            },
+            r'^conspiracy\s?facts?': {
+                'pattern': 'conspiracyfacts',
+                'cat': cat_notsouseful,
+                'desc': 'Generates a conspiracy fact',
+                'response': [self.conspiracy_fact],
+            },
+            r'^add conspiracyfacts?': {
+                'pattern': 'conspiracyfacts',
+                'cat': cat_notsouseful,
+                'desc': 'Generates a conspiracy fact',
+                'response': [self.add_ifact_form, 'user', 'channel'],
             },
             r'^emoji[s]? like': {
                 'pattern': 'emoji[s] like <regex-pattern>',
@@ -201,7 +204,7 @@ class Viktor:
                 'pattern': 'uwu [-l <1 or 2>] <text_to_uwu>',
                 'cat': cat_notsouseful,
                 'desc': 'Makes text pwettiew and easiew to uwundewstand (defaults to highest uwu level)',
-                'response': [self.uwu, 'raw_message'],
+                'response': [PhraseBuilders.uwu, 'raw_message'],
             },
             r'(thanks|(no\s?)*\s(t[h]?ank\s?(you|u)))': {
                 'cat': cat_basic,
@@ -295,19 +298,19 @@ class Viktor:
                 'pattern': '(et|en) <word-to-translate>',
                 'cat': cat_lang,
                 'desc': 'Offers a translation of an Estonian word into English or vice-versa',
-                'response': [self.ling.prep_message_for_translation, 'message', 'match_pattern']
+                'response': [Linguistics.prep_message_for_translation, 'message', 'match_pattern']
             },
             r'^ekss\s': {
                 'pattern': 'ekss <word-to-lookup>',
                 'cat': cat_lang,
                 'desc': 'Offers example usage of the given Estonian word',
-                'response': [self.ling.prep_message_for_examples, 'message', 'match_pattern']
+                'response': [Linguistics.prep_message_for_examples, 'message', 'match_pattern']
             },
             r'^lemma\s': {
                 'pattern': 'lemma <word-to-lookup>',
                 'cat': cat_lang,
                 'desc': 'Determines the lemma of the Estonian word',
-                'response': [self.ling.prep_message_for_root, 'message', 'match_pattern']
+                'response': [Linguistics.prep_message_for_root, 'message', 'match_pattern']
             },
             r'^wfh\s?(time|epoch)': {
                 'pattern': 'wfh (time|epoch)',
@@ -319,7 +322,7 @@ class Viktor:
                 'pattern': 'ety <word>',
                 'cat': cat_useful,
                 'desc': 'Gets the etymology of a given word',
-                'response': [self.ling.get_etymology, 'message', 'match_pattern']
+                'response': [Linguistics.get_etymology, 'message', 'match_pattern']
             }
         }
 
@@ -332,8 +335,6 @@ class Viktor:
         self.user_id = self.st.user_id
         self.bot = self.st.bot
         self.generate_intro()
-
-        self.pb = PhraseBuilders(self.st)
 
         self.st.message_test_channel(blocks=self.get_bootup_msg())
 
@@ -397,12 +398,25 @@ class Viktor:
                 resp = self.update_user_ltips(channel, self.approved_users[0], f'-u <@{user}> {game_value}')
                 if resp is not None:
                     self.st.send_message(channel, resp)
+        elif action_id == 'new-ifact':
+            self.add_ifact(user=user, channel=channel, txt=action_value)
+        elif action_id == 'new-role-p1':
+            self.new_role_form_p2(user=user, channel=channel, new_title=action_value)
+        elif action_id == 'new-role-p2':
+            # Update the description part of the role. Title should already be updated in p1
+            user_obj = self._get_user_obj(user)
+            if action_value != user_obj.role_desc:
+                user_obj.role_desc = action_value
+                vik_app.db.session.commit()
+            self.build_role_txt(channel=channel, user=user)
         elif action_id == 'new-emoji-p1':
             # Store this user's first portion of the new emoji request
             new_emoji_req = {user: {'url': action_value}}
             self.state_store['new-emoji'].update(new_emoji_req)
+            # Parse out the file name from the url
+            emoji_name = os.path.splitext(os.path.split(urlparse(action_value).path)[1])[0]
             # Send the second portion
-            self.add_emoji_form_p2(user=user, channel=channel, url=action_value)
+            self.add_emoji_form_p2(user=user, channel=channel, url=action_value, suggested_name=emoji_name)
         elif action_id == 'new-emoji-p2':
             # Compile all the details together and try to get the emoji uploaded
             url = self.state_store['new-emoji'].get(user).get('url')
@@ -418,7 +432,7 @@ class Viktor:
                 msg_text = msg.get('text')
                 if blocks is not None:
                     for i, block in enumerate(blocks):
-                        replaced_blocks.append(recursive_uwu(i, block, replace_func=self.uwu))
+                        replaced_blocks.append(recursive_uwu(i, block, replace_func=PhraseBuilders.uwu))
                     # Send message
                     try:
                         self.st.send_message(channel, message='uwu',
@@ -426,9 +440,29 @@ class Viktor:
                     except slack.errors.SlackApiError:
                         # Most likely because the block was a standard rich text one, which isn't allowed.
                         #   Fall back to basic text.
-                        self.st.send_message(channel, message=self.uwu(msg_text))
+                        self.st.send_message(channel, message=PhraseBuilders.uwu(msg_text))
                 else:
-                    self.st.send_message(channel, message=self.uwu(msg_text))
+                    self.st.send_message(channel, message=PhraseBuilders.uwu(msg_text))
+            elif action_id == 'emojiword':
+                # Uwu the message
+                msg = event_dict.get('message')
+                replaced_blocks = []
+                blocks = msg.get('blocks')
+                channel = event_dict.get('channel').get('id')
+                msg_text = msg.get('text')
+                if blocks is not None:
+                    for i, block in enumerate(blocks):
+                        replaced_blocks.append(recursive_uwu(i, block, replace_func=self.word_emoji))
+                    # Send message
+                    try:
+                        self.st.send_message(channel, message='word emoji',
+                                             blocks=replaced_blocks)
+                    except slack.errors.SlackApiError:
+                        # Most likely because the block was a standard rich text one, which isn't allowed.
+                        #   Fall back to basic text.
+                        self.st.send_message(channel, message=self.word_emoji(msg_text))
+                else:
+                    self.st.send_message(channel, message=self.word_emoji(msg_text))
 
     def prebuild_main_menu(self, user_id: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""
@@ -580,10 +614,24 @@ class Viktor:
         return ''.join(choice(weights)(c) for c in message) + ' :spongebob-mock:'
 
     @staticmethod
-    def word_emoji(message: str, match_pattern: str) -> str:
+    def word_emoji(message: str, match_pattern: str = None) -> str:
         """Randomly capitalize string"""
-        msg = re.sub(match_pattern, '', message).strip()
-        return ''.join(f':alphabet-yellow-{c}:' if c.lower() in string.ascii_lowercase else c for c in msg)
+        if match_pattern is not None:
+            msg = re.sub(match_pattern, '', message).strip()
+        else:
+            msg = message
+        # Build out character mapping
+        char_dict = {c: f':alphabet-yellow-{c}:' for c in string.ascii_lowercase}
+        char_dict.update({
+            '!': ':alphabet-yellow-exclamation:',
+            '?': ':alphabet-yellow-question:',
+            '#': ':alphabet-yellow-hash:',
+            '@': ':alphabet-yellow-at:',
+            "'": ':air_quotes:',
+            '"': ':air_quotes:',
+            ' ': ':blank:',
+        })
+        return ''.join(char_dict[c.lower()] if c.lower() in char_dict.keys() else c for c in msg)
 
     @staticmethod
     def access_something() -> str:
@@ -693,131 +741,6 @@ class Viktor:
 
         return blocks
 
-    def translate_that(self, channel: str, ts: str, message: str, pattern: str) -> Union[str, List[dict]]:
-        """Retrieves previous message and tries to translate it into whatever the target language is"""
-        target_lang = 'et'
-        if pattern is not None:
-            msg = re.sub(pattern, '', message).strip()
-            if msg == '':
-                return 'No target language code specified!'
-            target_lang = msg.split()[0]
-            if len(target_lang) != 2:
-                # Probably not a proper language code?
-                return f'Unrecognized language code {target_lang}'
-
-        prev_msg = self.st.get_prev_msg_in_channel(channel, ts,
-                                                   callable_list=[self.translate_anything, 'text', None,
-                                                                  target_lang, False])
-        if isinstance(prev_msg, str):
-            # The callable above only gets called when we're working with a block
-            return self.translate_anything(prev_msg, target=target_lang)
-        else:
-            return prev_msg
-
-    def translate_anything(self, message: str, match_pattern: str = None, target: str = None,
-                           block_return: bool = True) -> Union[str, List[dict]]:
-        """Attempts to translate any phrase into the target language defined at the beginning of the command"""
-        if match_pattern is not None:
-            # Request came directly
-            msg = re.sub(match_pattern, '', message).strip()
-            if msg == '':
-                return 'Missing language code and content.'
-            msg_split = msg.split()
-            target_lang = msg_split[0]
-            text = ' '.join(msg_split[1:])
-        else:
-            # Request came indirectly
-            if target is not None:
-                target_lang = target
-                text = message
-            else:
-                msg_split = message.split()
-                target_lang = msg_split[0]
-                text = ' '.join(msg_split[1:])
-
-        if len(target_lang) != 2:
-            # Probably not a proper language code?
-            return f'Unrecognized language code {target_lang}'
-
-        # Get a dictionary showing the source/target languages,
-        #   as well as the confidence and the translation itself
-        lang_dict = self.ling.translate_anything(text=text, target_lang=target_lang)
-
-        if block_return:
-            return [
-                bkb.make_context_section([
-                    bkb.markdown_section('*`{src_name} -> {tgt_name}`*\t '
-                                         'src lang confidence:\t{conf:.1%}'.format(**lang_dict))
-                ]),
-                bkb.make_block_divider(),
-                bkb.make_block_section(lang_dict['translation'])
-            ]
-        else:
-            return lang_dict['translation']
-
-    def uwu_that(self, channel: str, ts: str) -> Union[str, List[dict]]:
-        """Retrieves previous message and converts to UwU"""
-
-        prev_msg = self.st.get_prev_msg_in_channel(channel, ts, callable_list=[self.uwu, 'text'])
-        if isinstance(prev_msg, str):
-            # The callable above only gets called when we're working with a block
-            return self.uwu(prev_msg)
-        else:
-            return prev_msg
-
-    def uwu(self, msg: str) -> str:
-        """uwu-fy a message"""
-        default_lvl = 2
-
-        if '-l' in msg.split():
-            level = msg.split()[msg.split().index('-l') + 1]
-            level = int(level) if level.isnumeric() else default_lvl
-            text = ' '.join(msg.split()[msg.split().index('-l') + 2:])
-        else:
-            level = default_lvl
-            text = msg.replace('uwu', '').strip()
-
-        chars = [x for x in vik_app.db.session.query(TableUwu.graphic).all()]
-
-        if level >= 1:
-            # Level 1: Letter replacement
-            text = text.translate(str.maketrans('rRlL', 'wWwW'))
-
-        if level >= 2:
-            # Level 2: Placement of 'uwu' when certain patterns occur
-            pattern_allowlist = {
-                'uwu': {
-                    'start': 'u',
-                    'anywhere': ['nu', 'ou', 'du', 'un', 'bu'],
-                },
-                'owo': {
-                    'start': 'o',
-                    'anywhere': ['ow', 'bo', 'do', 'on'],
-                }
-            }
-            # Rebuild the phrase letter by letter
-            phrase = []
-            for word in text.split(' '):
-                roll = randint(1, 10)
-                if roll < 3 and len(word) > 0:
-                    word = f'{word[0]}-{word}'
-                for pattern, pattern_dict in pattern_allowlist.items():
-                    if word.startswith(pattern_dict['start']):
-                        word = word.replace(pattern_dict['start'], pattern)
-                    else:
-                        for fragment in pattern_dict['anywhere']:
-                            if fragment in word:
-                                word = word.replace(pattern_dict['start'], pattern)
-                phrase.append(word)
-            text = ' '.join(phrase)
-
-            # Last step, insert random characters
-            prefix_emoji = chars[np.random.choice(len(chars), 1)[0]].graphic
-            suffix_emoji = chars[np.random.choice(len(chars), 1)[0]].graphic
-            text = f'{prefix_emoji} {text} {suffix_emoji}'
-
-        return text.replace('`', ' ')
-
     def quote_me(self, message: str, match_pattern: str) -> Optional[str]:
         """Converts message into letter emojis"""
         msg = re.sub(match_pattern, '', message).strip()
@@ -829,9 +752,9 @@ class Viktor:
         resp = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
                                                blocks=form1)
 
-    def add_emoji_form_p2(self, user: str, channel: str, url: str):
+    def add_emoji_form_p2(self, user: str, channel: str, url: str, suggested_name: str):
         """Part 2 of emoji intake"""
-        form2 = Forms.build_new_emoji_form_p2(url)
+        form2 = Forms.build_new_emoji_form_p2(url, suggested_name=suggested_name)
         resp = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
                                                blocks=form2)
 
@@ -846,22 +769,27 @@ class Viktor:
                   f'(Hint: if it is, there will be an emoji here: :{new_name}:'
         self.st.private_channel_message(user_id=user, channel=channel, message=msg)
 
+    def add_ifact_form(self, user: str, channel: str):
+        """Builds form to intake new fact"""
+        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New ifact form',
+                                               blocks=Forms.build_ifact_input_form_p1())
+
+    def add_ifact(self, user: str, channel: str, txt: str):
+        fact = TableFacts(type=FactTypes.conspiracy, text=txt)
+        vik_app.db.session.add(fact)
+        vik_app.db.session.commit()
+        self.st.send_message(channel=channel, message=f'Fact added! id:`{fact.id}`\n{fact.text}')
+
     # Phrase building methods
     # ------------------------------------------------
-    def guess_acronym(self, message: str) -> str:
-        return self.pb.guess_acronym(message)
 
-    def insult(self, message: str) -> str:
-        return self.pb.insult(message)
+    @staticmethod
+    def facts():
+        return PhraseBuilders.facts(grp='standard')
 
-    def phrase_generator(self, message: str) -> str:
-        return self.pb.phrase_generator(message)
-
-    def compliment(self, raw_message: str, user: str) -> str:
-        return self.pb.compliment(raw_message, user)
-
-    def facts(self):
-        return self.pb.facts()
+    @staticmethod
+    def conspiracy_fact():
+        return PhraseBuilders.facts(grp='conspiracy')
 
     # OKR Methods
     # ------------------------------------------------
@@ -936,6 +864,29 @@ class Viktor:
             bkb.make_block_section(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
         ]
 
+    @staticmethod
+    def _get_user_obj(user: str) -> TableUsers:
+        return vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
+
+    def new_role_form_p1(self, user: str, channel: str):
+        """Builds form to intake emoji and upload"""
+        # Load user
+        user_obj = self._get_user_obj(user)
+        form1 = Forms.build_role_input_form_p1(existing_title=user_obj.role)
+        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p1',
+                                               blocks=form1)
+
+    def new_role_form_p2(self, user: str, channel: str, new_title: str):
+        """Part 2 of new role intake"""
+        # Load user
+        user_obj = self._get_user_obj(user)
+        if new_title != user_obj.role:
+            user_obj.role = new_title
+            vik_app.db.session.commit()
+        form2 = Forms.build_role_input_form_p2(title=new_title, existing_desc=user_obj.role_desc)
+        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p1',
+                                               blocks=form2)
+
     def update_user_level(self, channel: str, user: str, message: str, match_pattern: str) -> Optional[str]:
         """Increment the user's level"""
         content = re.sub(match_pattern, '', message).strip()
@@ -951,7 +902,7 @@ class Viktor:
                 # Some people should stay permanently at lvl 1
                 return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
 
-            user_obj = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
+            user_obj = self._get_user_obj(user)
             if user is None:
                 return f'user <@{user}> not found in HR records... :nervous_peach:'
             user_obj.level += 1
@@ -981,7 +932,7 @@ class Viktor:
                 if not -1000 < ltits < 1000:
                     # Limit the number of ltits that can be distributed at any given time
                     ltits = 1000 if ltits > 1000 else -1000
-                user_obj = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
+                user_obj = self._get_user_obj(user)
                 if user is None:
                     return f'user <@{user}> not found in HR records... :nervous_peach:'
                 user_obj.ltits += ltits
@@ -993,20 +944,22 @@ class Viktor:
         else:
             return 'No user tagged for update.'
 
-    def update_roles(self, user: str, channel: str, msg: str, match_pattern: str) -> Optional:
-        """Updates a user with their role"""
-        content = re.sub(match_pattern, '', msg).strip()
-
-        if '-u' in content:
-            # Updating role of other user
-            # Extract user
-            user = content.split()[1].replace('<@', '').replace('>', '').upper()
-            content = ' '.join(content.split()[2:])
-        # TODO this
-        return 'TBD!'
-
-    def show_roles(self, user: str = None) -> Union[List[Dict], str]:
+    @staticmethod
+    def show_roles(user: str = None) -> Union[List[Dict], str]:
         """Prints users roles to channel"""
+        def build_employee_info(emp: TableUsers) -> str:
+            """Build out an individual line of an employee's info"""
+            role = emp.role
+            role_desc = emp.role_desc
+            if role is None:
+                role = 'You take the specifications from the customers, and you bring them ' \
+                       'down to the software engineers'
+            if role_desc is None:
+                role_desc = 'What would you say... you do here?'
+
+            return f'*`{emp.name}`*: Level *`{emp.level}`* (*`{emp.ltits}`* LTITs)\n' \
+                   f'\t\t*{role}*\n\t\t\t{role_desc}'
+
         roles_output = []
         if user is None:
             # Printing roles for everyone
@@ -1017,26 +970,14 @@ class Viktor:
                 ])
             ]
             # Iterate through roles, print them out
-            for u in vik_app.db.session.query(TableUsers).all():
-                role = u.role if u.role is not None else 'You take the specifications from the customers, ' \
-                                                         'and you bring them down to the software engineers'
-                role_desc = u.role_desc if u.role_desc is not None else 'What would you say... you do here?'
-                roles_output.append(bkb.make_block_section([
-                    f'*`{u.name}`*: Level *`{u.level}`* (*`{u.ltits}*` LTITs)\n\t\t*{role}*\n\t\t\t{role_desc}'
-                ]))
+            for u in vik_app.db.session.query(TableUsers).filter(TableUsers.level > 0).all():
+                roles_output.append(bkb.make_block_section([build_employee_info(emp=u)]))
         else:
             # Printing role for an individual user
             user_obj = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
             if user is None:
                 return f'user <@{user}> not found in HR records... :nervous_peach:'
-            role = user_obj.role if user_obj.role is not None else 'You take the specifications from the ' \
-                                                                   'customers, and you bring them down to the ' \
-                                                                   'software engineers.'
-            role_desc = user_obj.role_desc if user_obj.role_desc is not None else 'What would you say... you do here?'
-            roles_output.append(bkb.make_block_section([
-                f'*`{user_obj.name}`*: Level *`{user_obj.level}`* (*`{user_obj.ltits}*` LTITs)'
-                f'\n\t\t*{role}*\n\t\t\t{role_desc}'
-            ]))
+            roles_output.append(bkb.make_block_section([build_employee_info(emp=user_obj)]))
 
         return roles_output
 
