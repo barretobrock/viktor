@@ -47,22 +47,3 @@ def collect_pins(pin_dict: Dict, session: Session, log: Log) -> TableQuotes:
                                             pytz.timezone('US/Central')),
         pin_date=datetime.fromtimestamp(pin_dict.get('created'), pytz.timezone('US/Central'))
     )
-
-
-TEXT_KEYS = ['text']
-
-
-def recursive_uwu(key, val, replace_func):
-    """Iterates through a nested dict, replaces text areas with uwu"""
-    if isinstance(val, dict):
-        items = val.items()
-    elif isinstance(val, (list, tuple)):
-        items = enumerate(val)
-    else:
-        if isinstance(key, str) and key in TEXT_KEYS:
-            return replace_func(val)
-        return val
-
-    for k, v in items:
-        val[k] = recursive_uwu(k, v, replace_func)
-    return val
