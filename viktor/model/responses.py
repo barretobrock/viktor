@@ -8,6 +8,7 @@ class ResponseTypes(enum.Enum):
     stakeholder = 'stakeholder'
     general = 'general'
     sarcastic = 'sarcastic'
+    jackhandey = 'jackhandey'
 
 
 class TableResponses(Base):
@@ -64,9 +65,15 @@ class TablePhrases(Base):
     text = Column(TEXT, nullable=False)
 
 
+class FactTypes(enum.Enum):
+    standard = 'standard'
+    conspiracy = 'conspiracy'
+
+
 class TableFacts(Base):
     """response table - stores various responses"""
     __tablename__ = 'facts'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    type = Column(Enum(FactTypes), default=FactTypes.standard, nullable=False)
     text = Column(TEXT, nullable=False)
