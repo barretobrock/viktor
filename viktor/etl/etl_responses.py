@@ -1,4 +1,4 @@
-response_tables = ['responses', 'insults', 'compliments', 'phrases', 'facts']
+response_tables = ['responses', 'insults', 'compliments', 'phrases', 'facts', 'uwu_graphics']
 
 
 if __name__ == '__main__':

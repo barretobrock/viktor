@@ -1,14 +1,12 @@
 import re
 import time
-from datetime import datetime
 from typing import List, Dict
-import pytz
 from slack.errors import SlackApiError
 from easylogger import Log
 from slacktools import SecretStore, GSheetReader, SlackTools
 from viktor.model import Base, TableEmojis, AcronymTypes, TableAcronyms, TableUsers, TablePerks, \
     ResponseTypes, TableResponses, TableFacts, TableUwu, TableInsults, InsultTypes, TablePhrases, PhraseTypes, \
-    TableCompliments, ComplimentTypes, TableQuotes
+    TableCompliments, ComplimentTypes, FactTypes
 from viktor.etl import acronym_tables, emoji_tables, okr_tables, response_tables, user_tables, quotes_tables
 from viktor.settings import auto_config
 from viktor.utils import collect_pins
@@ -122,7 +120,7 @@ class ETL:
                 phrs, stage = col.split('_')
                 finished_rows += [TablePhrases(type=col_mapping[phrs], stage=stage, text=x) for x in word_list]
             elif tbl_name == 'facts':
-                finished_rows += [TableFacts(text=x) for x in word_list]
+                finished_rows += [TableFacts(type=col_mapping[col], text=x) for x in word_list]
             elif tbl_name == 'uwu_graphics':
                 finished_rows += [TableUwu(graphic=x) for x in word_list]
         self.log.debug(f'Adding {len(finished_rows)} items to session...')
@@ -134,7 +132,8 @@ class ETL:
         col_mapping = {
             'stakeholder': ResponseTypes.stakeholder,
             'general': ResponseTypes.general,
-            'sarcastic': ResponseTypes.sarcastic
+            'sarcastic': ResponseTypes.sarcastic,
+            'jackhandey': ResponseTypes.jackhandey
         }
         self._parse_df('responses', tbl_name='responses', col_mapping=col_mapping)
 
@@ -163,8 +162,12 @@ class ETL:
         self._parse_df('phrases', tbl_name='phrases', col_mapping=col_mapping)
 
         # Facts
+        col_mapping = {
+            'facts': FactTypes.standard,
+            'conspiracy_facts': FactTypes.conspiracy
+        }
         self.log.debug('Working on facts...')
-        self._parse_df('facts', tbl_name='facts')
+        self._parse_df('facts', tbl_name='facts', col_mapping=col_mapping)
 
         # UWU
         self.log.debug('Working on uwu_graphics...')
