@@ -2,13 +2,13 @@ import json
 import signal
 import requests
 from datetime import datetime, timedelta
-from random import randint, choice
+from random import choice
 from flask import Flask, request, make_response
 from flask_sqlalchemy import SQLAlchemy
 from slacktools import SlackEventAdapter, SecretStore, BlockKitBuilder as bkb
 from easylogger import Log
 import viktor.bot_base as botbase
-from .model import TableEmojis, TableUsers
+from .model import TableEmojis, TableUsers, TableResponses, ResponseTypes
 from .settings import auto_config
 from .utils import collect_pins
 
@@ -30,6 +30,8 @@ db = SQLAlchemy(app)
 
 logg.debug('Instantiating bot...')
 Bot = botbase.Viktor(parent_log=logg)
+RESPONSES = [x.text for x in
+             db.session.query(TableResponses).filter(TableResponses.type == ResponseTypes.general).all()]
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
@@ -71,16 +73,9 @@ def handle_action():
     Bot.process_incoming_action(user, channel, action_dict=action, event_dict=event_data)
 
     # Respond to the initial message and update it
-    responses = [
-        'Thanks, shithead!',
-        'Good job, you did a thing!',
-        'Look at you, doing things and shit!',
-        'Hey, you\'re a real pal!',
-        'Thanks, I guess...'
-    ]
     update_dict = {
         'replace_original': True,
-        'text': choice(responses)
+        'text': choice(RESPONSES)
     }
     if event_data.get('container', {'is_ephemeral': False}).get('is_ephemeral', False):
         update_dict['response_type'] = 'ephemeral'
@@ -153,6 +148,22 @@ def handle_cron_profile_update():
     return make_response('', 200)
 
 
+@app.route("/cron/reacts", methods=['POST'])
+def handle_cron_reacts():
+    """Check for new reactions - if any, run through and react to them"""
+    # Check emojis uploaded (every 60 mins)
+    # This url is hit in crontab as such:
+    #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/reacts
+    if len(Bot.state_store.get('reacts', {})) > 0:
+        # Begin reacting to new reactions
+        emojis = Bot.emoji_list
+        for item in Bot.state_store.get('reacts'):
+            chan, ts = item.split('|')
+            Bot.bot.reactions_add(name=choice(emojis), channel=chan, timestamp=ts)
+        # Reset the reacts
+        Bot.state_store['reacts'] = {}
+
+
 @bot_events.on('reaction_added')
 def reaction(event_data: dict):
     event = event_data['event']
@@ -161,14 +172,8 @@ def reaction(event_data: dict):
         return
     if event['user'] not in [Bot.bot_id, Bot.user_id]:
         # Keep from reacting to own reaction
-        emojis = db.session.query(TableEmojis).all()
-        random_emoji = emojis[randint(0, len(emojis))]
         try:
-            Bot.bot.reactions_add(
-                name=random_emoji.name,
-                channel=channel,
-                timestamp=event['item']['ts']
-            )
+            Bot.state_store['reacts'].add(f'{channel}|{event["item"]["ts"]}')
         except Exception as e:
             # Sometimes we'll get a 'too_many_reactions' error. Disregard in that case
             pass

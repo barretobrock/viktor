@@ -19,7 +19,7 @@ import viktor.app as vik_app
 from .linguistics import Linguistics
 from .phrases import PhraseBuilders, recursive_uwu
 from .settings import auto_config
-from .model import TableUsers, TableEmojis, TablePerks, TableResponses, TableFacts, FactTypes
+from .model import TableUsers, TableEmojis, TablePerks, TableFacts, FactTypes
 from .forms import Forms
 
 
@@ -220,7 +220,7 @@ class Viktor:
                 'pattern': 'button game',
                 'cat': cat_notsouseful,
                 'desc': 'Play a game, win (or lose) LTITs',
-                'response': [self.button_game],
+                'response': [self.button_game, 'message'],
             },
             r'^access': {
                 'pattern': 'access <literally-anything-else>',
@@ -238,7 +238,12 @@ class Viktor:
             r'^(he(y|llo)|howdy|salu|hi|qq|wyd|greet|servus|ter|bonj)': {
                 'cat': cat_notsouseful,
                 'desc': 'Responds appropriately to a simple greeting',
-                'response': [self.sh_response],
+                'response': [PhraseBuilders.sh_response],
+            },
+            r'jackhandey': {
+                'cat': cat_notsouseful,
+                'desc': 'Responds appropriately to a simple greeting',
+                'response': [PhraseBuilders.jackhandey],
             },
             r'.*inspir.*': {
                 'pattern': '<any text with "inspir" in it>',
@@ -255,7 +260,7 @@ class Viktor:
             r'^shurg': {
                 'pattern': '<any text with "shurg" at the beginning>',
                 'cat': cat_notsouseful,
-                'desc': '¯\_(ツ)_/¯',
+                'desc': r'¯\_(ツ)_/¯',
                 'response': [self.shurg, 'message'],
             },
             r'^(randcap|mock)': {
@@ -274,13 +279,13 @@ class Viktor:
                 'pattern': '(update level|level up) -u <user>',
                 'cat': cat_org,
                 'desc': 'Accesses an employee\'s LevelUp registry and increments their level',
-                'response': [self.update_user_level, 'channel', 'user', 'message', 'match_pattern']
+                'response': [Forms.build_update_user_level_form]
             },
-            r'^ltits': {
-                'pattern': 'ltits -u <user> <number>',
+            r'^(gib)?\s?ltits': {
+                'pattern': 'ltits',
                 'cat': cat_org,
                 'desc': 'Distribute or withdraw LTITs from an employee\'s account',
-                'response': [self.update_user_ltips, 'channel', 'user', 'message', 'match_pattern']
+                'response': [Forms.build_update_user_ltits_form_p1]
             },
             r'^show (my )?perk[s]?': {
                 'pattern': 'show [my] perk(s)',
@@ -341,7 +346,8 @@ class Viktor:
         self.emoji_list = self.refresh_emojis()
         # Place to temporarily store things. Typical structure is activity -> user -> data
         self.state_store = {
-            'new-emoji': {}
+            'new-emoji': {},
+            'reacts': {}
         }
 
         self.log.debug(f'{self.bot_name} booted up!')
@@ -392,10 +398,10 @@ class Viktor:
 
         if 'buttongame' in action_id:
             # Button game stuff
-            game_value = action_value.split('-')[1]
+            game_value = action_value.split('|')[1]
             if game_value.isnumeric():
-                game_value = int(game_value) - 500
-                resp = self.update_user_ltips(channel, self.approved_users[0], f'-u <@{user}> {game_value}')
+                game_value = int(game_value) - 5000
+                resp = self.update_user_ltips(channel, self.approved_users[0], target_user=user, ltits=game_value)
                 if resp is not None:
                     self.st.send_message(channel, resp)
         elif action_id == 'new-ifact':
@@ -409,6 +415,36 @@ class Viktor:
                 user_obj.role_desc = action_value
                 vik_app.db.session.commit()
             self.build_role_txt(channel=channel, user=user)
+        elif action_id == 'levelup-user':
+            self.update_user_level(channel=channel, requesting_user=user,
+                                   target_user=action_dict.get('selected_user'))
+        elif action_id == 'ltits-user-p1':
+            new_ltit_req = {user: action_dict.get('selected_user')}
+            if 'new-ltit-req' in self.state_store.keys():
+                self.state_store['new-ltit-req'].update(new_ltit_req)
+            else:
+                self.state_store['new-ltit-req'] = new_ltit_req
+            tgt_user_obj = self._get_user_obj(action_dict.get('selected_user'))
+            form_p2 = Forms.build_update_user_ltits_form_p2(tgt_user_obj.ltits)
+            self.st.send_message(channel=channel, message='LTITs form p2', blocks=form_p2)
+        elif action_id == 'ltits-user-p2':
+            target_user = self.state_store['new-ltit-req'].get(user)
+            # Convert the value into a number
+            ltits = re.search(r'[-+]?\d+[,\d+.]*', action_value)
+            if ltits is None:
+                # No number provided.
+                self.st.send_message(channel=channel,
+                                     message=f'Can\'t find a number from this input: `{action_value}`')
+                return None
+            ltits = ltits.group()
+            try:
+                ltits = float(ltits)
+            except ValueError:
+                # Number was bad format
+                self.st.send_message(channel=channel,
+                                     message=f'Parsed number is bad format for float covnersion: `{ltits}`')
+                return None
+            self.update_user_ltips(channel=channel, requesting_user=user, target_user=target_user, ltits=ltits)
         elif action_id == 'new-emoji-p1':
             # Store this user's first portion of the new emoji request
             new_emoji_req = {user: {'url': action_value}}
@@ -535,7 +571,8 @@ class Viktor:
     @staticmethod
     def refresh_emojis() -> List[str]:
         """Refreshes the list of emojis"""
-        return vik_app.db.session.query(TableEmojis.name).filter(TableEmojis.is_denylisted == False).all()
+        return [x.name for x in
+                vik_app.db.session.query(TableEmojis).filter(TableEmojis.is_denylisted == False).all()]
 
     def get_emojis_like(self, match_pattern: str, message: str, max_res: int = 500) -> str:
         """Gets emojis matching in the system that match a given regex pattern"""
@@ -688,12 +725,6 @@ class Viktor:
 
     # Misc. methods
     # ====================================================
-    def sh_response(self) -> str:
-        """Responds to SHs"""
-        responses = [x.text for x in
-                     vik_app.db.session.query(TableResponses).filter(TableResponses.type == 'stakeholder').all()]
-        return responses[randint(0, len(responses) - 1)]
-
     def inspirational(self, channel: str):
         """Sends a random inspirational message"""
         resp = requests.get('https://inspirobot.me/api?generate=true')
@@ -706,33 +737,50 @@ class Viktor:
                     f.write(img.content)
                 self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
 
-    def button_game(self):
+    def button_game(self, message: str):
         """Renders 5 buttons that the user clicks - one button has a value that awards them points"""
+        default_limit = 100
+        limit = None
+        msplit = message.split(' ')
+        if len(msplit) > 1:
+            # Try to get limit
+            str_limit = re.search(r'[-+]?\d+[,\d+.]*', msplit[1])
+            if str_limit is not None:
+                limit = float(str_limit.group())
+        if limit is None:
+            limit = default_limit
+        upper = int(abs(limit) if limit < 5000 else 5000)
+        lower = int(upper * -1)
         btn_blocks = []
         # Determine where to hide the value
-        n_buttons = randint(5, 16)
+        n_buttons = randint(5, 12)
         items = list(range(1, n_buttons + 1))
         emojis = [self.emoji_list[x] for x in np.random.choice(len(self.emoji_list), len(items), False)]
         rand_val = randint(1, n_buttons)
         # Pick two places where negative values should go
-        neg_items = list(np.random.choice([x for x in items if x != rand_val], int(n_buttons/2), False))
+        neg_items = list(np.random.choice([x for x in items if x != rand_val], int(n_buttons * .8), False))
         neg_values = []
         win = 0
         for i in items:
             if i == rand_val:
-                val = np.random.choice(50, 1)[0]
+                val = np.random.choice(upper, 1)[0]
                 win = val
             elif i in neg_items:
-                val = np.random.choice(range(-50, 0), 1)[0]
+                val = np.random.choice(range(lower, 0), 1)[0]
                 neg_values.append(val)
             else:
                 val = 0
-            btn_blocks.append(bkb.make_action_button(f':{emojis[i - 1]}', value=f'buttongame-{val + 500}',
+            btn_blocks.append(bkb.make_action_button(f':{emojis[i - 1]}:', value=f'bg|{val + 5000}',
                                                      action_id=f'buttongame-{i}'))
 
         blocks = [
+            bkb.make_block_section(':spinny-rainbow-sheep:'
+                                   ':alphabet-yellow-b::alphabet-yellow-u::alphabet-yellow-t:'
+                                   ':alphabet-yellow-t::alphabet-yellow-o::alphabet-yellow-n:'
+                                   ':blank::alphabet-yellow-g::alphabet-yellow-a::alphabet-yellow-m:'
+                                   ':alphabet-yellow-e::alphabet-yellow-exclamation::spinny-rainbow-sheep:'),
             bkb.make_context_section([
-                bkb.markdown_section('Try your luck and guess which button is hiding the LTITs!!'
+                bkb.markdown_section('Try your luck and guess which button is hiding the LTITs!! '
                                      f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
                                      f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.')
             ]),
@@ -884,65 +932,40 @@ class Viktor:
             user_obj.role = new_title
             vik_app.db.session.commit()
         form2 = Forms.build_role_input_form_p2(title=new_title, existing_desc=user_obj.role_desc)
-        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p1',
+        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p2',
                                                blocks=form2)
 
-    def update_user_level(self, channel: str, user: str, message: str, match_pattern: str) -> Optional[str]:
+    def update_user_level(self, channel: str, requesting_user: str, target_user: str) -> Optional[str]:
         """Increment the user's level"""
-        content = re.sub(match_pattern, '', message).strip()
 
-        if user not in self.approved_users:
+        if requesting_user not in self.approved_users:
             return 'LOL sorry, levelups are CEO-approved only'
 
-        if '-u' in content:
-            # Updating role of other user
-            # Extract user
-            user = content.split()[1].replace('<@', '').replace('>', '').upper()
-            if user == 'UPLAE3N67':
-                # Some people should stay permanently at lvl 1
-                return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
+        if target_user == 'UPLAE3N67':
+            # Some people should stay permanently at lvl 1
+            return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
 
-            user_obj = self._get_user_obj(user)
-            if user is None:
-                return f'user <@{user}> not found in HR records... :nervous_peach:'
-            user_obj.level += 1
-            vik_app.db.session.commit()
-            self.st.send_message(channel, f'Level for *`{user_obj.name}`* updated to *`{user_obj.level}`*.')
-        else:
-            return 'No user tagged for update.'
+        user_obj = self._get_user_obj(target_user)
+        if user_obj is None:
+            return f'user <@{target_user}> not found in HR records... :nervous_peach:'
+        user_obj.level += 1
+        vik_app.db.session.commit()
+        self.st.send_message(channel, f'Level for *`{user_obj.name}`* updated to *`{user_obj.level}`*.')
 
-    def update_user_ltips(self, channel: str, user: str, message: str, match_pattern: str = None) -> Optional[str]:
+    def update_user_ltips(self, channel: str, requesting_user: str, target_user: str, ltits: float) -> \
+            Optional[str]:
         """Increment the user's level"""
-        if match_pattern is not None:
-            content = re.sub(match_pattern, '', message).strip()
-        else:
-            content = message
 
-        if user not in self.approved_users:
+        if requesting_user not in self.approved_users:
             return 'LOL sorry, LTIT distributions are CEO-approved only'
 
-        if '-u' in content:
-            # Updating role of other user
-            # Extract user
-            user = content.split()[1].replace('<@', '').replace('>', '').upper()
-            points = content.split()[-1]
-            if points.replace('-', '').replace('+', '').isnumeric():
-                ltits = int(points.replace('-', '').replace('+', ''))
-                ltits = ltits * -1 if '-' in points else ltits
-                if not -1000 < ltits < 1000:
-                    # Limit the number of ltits that can be distributed at any given time
-                    ltits = 1000 if ltits > 1000 else -1000
-                user_obj = self._get_user_obj(user)
-                if user is None:
-                    return f'user <@{user}> not found in HR records... :nervous_peach:'
-                user_obj.ltits += ltits
-                vik_app.db.session.commit()
-                self.st.send_message(
-                    channel, f'LTITs for  *`{user_obj.name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.')
-            else:
-                return 'Please put points at the end. (+n, -n, n)'
-        else:
-            return 'No user tagged for update.'
+        user_obj = self._get_user_obj(target_user)
+        if user_obj is None:
+            return f'user <@{target_user}> not found in HR records... :nervous_peach:'
+        user_obj.ltits += ltits
+        vik_app.db.session.commit()
+        self.st.send_message(
+            channel, f'LTITs for  *`{user_obj.name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.')
 
     @staticmethod
     def show_roles(user: str = None) -> Union[List[Dict], str]:

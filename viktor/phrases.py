@@ -6,7 +6,8 @@ from typing import List, Optional, Dict, Union, Tuple, Type
 import numpy as np
 from slacktools import BlockKitBuilder as bkb
 import viktor.app as vik_app
-from .model import TableAcronyms, TablePhrases, TableCompliments, TableInsults, TableFacts, TableUwu
+from .model import TableAcronyms, TablePhrases, TableCompliments, TableInsults, TableFacts, TableUwu, \
+    TableResponses
 
 
 TEXT_KEYS = ['text']
@@ -128,6 +129,39 @@ class PhraseBuilders:
         """
         return vik_app.Bot.st.parse_flags_from_command(message)['cmd'].replace(cmd_base, '').strip()
 
+    @staticmethod
+    def _get_set(tbl: Type[Union[TablePhrases, TableCompliments, TableInsults]], grp: str) -> \
+            Union[str, List[Union[TablePhrases, TableCompliments, TableInsults]]]:
+        """Retrieve the set from the given table. If not found, return a list of available sets"""
+        words = vik_app.db.session.query(tbl).filter(tbl.type == grp).all()
+        if len(words) == 0:
+            all_groups = vik_app.db.session.query(tbl).group_by(tbl.type).all()
+            available_sets = [x.type.name for x in all_groups]
+            return f'Cannot find set `{grp}` in the table. Available sets: `{"`, `".join(available_sets)}`'
+        return words
+
+    @classmethod
+    def _message_extractor(cls, message, cmd: str, default_group: str) -> Tuple[str, int, Optional[str]]:
+        """extracts valuable info from message"""
+        # Parse the group of phrases the user wants to work with
+        phrase_group = vik_app.Bot.st.get_flag_from_command(message, flags=['group', 'g'], default=default_group)
+        # Number of times to cycle through phrase generation
+        n_times = vik_app.Bot.st.get_flag_from_command(message, flags=['n'], default='1')
+        n_times = int(n_times) if n_times.isnumeric() else 1
+        # Capture a possible target (not always used though)
+        target = cls._get_target(message, cmd)
+        return phrase_group, n_times, target
+
+    @classmethod
+    def sh_response(cls) -> str:
+        responses = cls._get_set(TableResponses, grp='stakeholder')
+        return choice(responses).text
+
+    @classmethod
+    def jackhandey(cls) -> str:
+        responses = cls._get_set(TableResponses, grp='jackhandey')
+        return choice(responses).text
+
     @classmethod
     def guess_acronym(cls, message: str) -> str:
         """Tries to guess an acronym from a message"""
@@ -176,18 +210,6 @@ class PhraseBuilders:
         return f':robot-face: Here are my guesses for *`{acronym.upper()}`*!\n {guess_chunk}'
 
     @classmethod
-    def _message_extractor(cls, message, cmd: str, default_group: str) -> Tuple[str, int, Optional[str]]:
-        """extracts valuable info from message"""
-        # Parse the group of phrases the user wants to work with
-        phrase_group = vik_app.Bot.st.get_flag_from_command(message, flags=['group', 'g'], default=default_group)
-        # Number of times to cycle through phrase generation
-        n_times = vik_app.Bot.st.get_flag_from_command(message, flags=['n'], default='1')
-        n_times = int(n_times) if n_times.isnumeric() else 1
-        # Capture a possible target (not always used though)
-        target = cls._get_target(message, cmd)
-        return phrase_group, n_times, target
-
-    @classmethod
     def insult(cls, message: str) -> str:
         """Insults the user at their request"""
         message_split = message.split()
@@ -218,17 +240,6 @@ class PhraseBuilders:
         else:
             p_txt = f"{target.title()} aint nothin but a {' and a '.join([' '.join(x) for x in word_lists])}."
         return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', p_txt)
-
-    @staticmethod
-    def _get_set(tbl: Type[Union[TablePhrases, TableCompliments, TableInsults]], grp: str) -> \
-            Union[str, List[Union[TablePhrases, TableCompliments, TableInsults]]]:
-        """Retrieve the set from the given table. If not found, return a list of available sets"""
-        words = vik_app.db.session.query(tbl).filter(tbl.type == grp).all()
-        if len(words) == 0:
-            all_groups = vik_app.db.session.query(tbl).group_by(tbl.type).all()
-            available_sets = [x.type.name for x in all_groups]
-            return f'Cannot find set `{grp}` in the table. Available sets: `{"`, `".join(available_sets)}`'
-        return words
 
     @classmethod
     def phrase_generator(cls, message: str) -> str:

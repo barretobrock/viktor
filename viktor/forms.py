@@ -56,6 +56,31 @@ class Forms:
         return [bkb.make_plaintext_input(label='Add fact here!', action_id='new-ifact')]
 
     @staticmethod
+    def build_update_user_level_form():
+        return [
+            bkb.make_header('Levelup form!'),
+            bkb.make_context_section([bkb.markdown_section('_(yes, it really is this easy to levelup!)_')]),
+            bkb.make_user_select('Select user to levelup', action_id='levelup-user')
+        ]
+
+    @staticmethod
+    def build_update_user_ltits_form_p1():
+        return [
+            bkb.make_header('LTITs distribution form, part 1!'),
+            bkb.make_context_section([bkb.markdown_section('_(yes, it really is this easy to get LTITs!)_')]),
+            bkb.make_user_select('Select user to give LTITs to', action_id='ltits-user-p1')
+        ]
+
+    @staticmethod
+    def build_update_user_ltits_form_p2(current_ltits: float):
+        return [
+            bkb.make_header('LTITs distribution form, part 2!'),
+            bkb.make_context_section([bkb.markdown_section('_(yes, it really is this easy to get LTITs!)_')]),
+            bkb.make_block_section(f'User\'s current LTITs: *`{current_ltits}`*'),
+            bkb.make_plaintext_input('Select LTIT amount', action_id='ltits-user-p2', initial_value=str(10))
+        ]
+
+    @staticmethod
     def build_role_input_form_p1(existing_title: str) -> List[Dict]:
         """Intakes a link to the new emoji"""
 
