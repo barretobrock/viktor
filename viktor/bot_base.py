@@ -499,6 +499,9 @@ class Viktor:
                         self.st.send_message(channel, message=self.word_emoji(msg_text))
                 else:
                     self.st.send_message(channel, message=self.word_emoji(msg_text))
+        else:
+            # TODO Otherwise treat the action as a phrase?
+            pass
 
     def prebuild_main_menu(self, user_id: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""

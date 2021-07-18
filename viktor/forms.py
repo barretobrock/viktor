@@ -9,17 +9,11 @@ class Forms:
     @classmethod
     def build_main_menu(cls, slack_api: SlackTools, user: str, channel: str):
         """Generates and sends a main menu"""
-        links = [
-            'https://picard.ytmnd.com/',
-            'https://darthno.ytmnd.com/',
-            'https://christmaschebacca.ytmnd.com/',
-            'https://leekspin.ytmnd.com/'
-        ]
         button_list = [
-            bkb.make_action_button('Phrase', value='phrase', action_id='phrase', url=choice(links)),
-            bkb.make_action_button('Insult', value='insult', action_id='insult', url=choice(links)),
-            bkb.make_action_button('OKR Roles', value='roles', action_id='roles', url=choice(links)),
-            bkb.make_action_button('OKR Perks!', value='perks', action_id='perks', url=choice(links))
+            bkb.make_action_button('Phrase', value='phrase', action_id='phrase'),
+            bkb.make_action_button('Insult', value='insult', action_id='insult'),
+            bkb.make_action_button('OKR Roles', value='roles', action_id='roles'),
+            bkb.make_action_button('OKR Perks!', value='perks', action_id='perks')
         ]
         blocks = [
             bkb.make_header('Velkom zu Wiktor Main Menu'),

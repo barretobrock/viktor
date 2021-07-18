@@ -154,14 +154,19 @@ def handle_cron_reacts():
     # Check emojis uploaded (every 60 mins)
     # This url is hit in crontab as such:
     #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/reacts
-    if len(Bot.state_store.get('reacts', {})) > 0:
+    logg.debug('Handling recent reacts...')
+    reacts = Bot.state_store.get('reacts', {})
+    if len(reacts) > 0:
         # Begin reacting to new reactions
+        logg.debug(f'{len(reacts)} reacts found.')
         emojis = Bot.emoji_list
         for item in Bot.state_store.get('reacts'):
+            logg.debug(f'Channel|timestamp: {item}')
             chan, ts = item.split('|')
             Bot.bot.reactions_add(name=choice(emojis), channel=chan, timestamp=ts)
         # Reset the reacts
         Bot.state_store['reacts'] = {}
+    return make_response('', 200)
 
 
 @bot_events.on('reaction_added')
@@ -169,9 +174,11 @@ def reaction(event_data: dict):
     event = event_data['event']
     channel = event['item']['channel']
     if channel in auto_config.DENY_LIST_CHANNELS:
+        logg.debug(f'Bypassing react in denylisted channel.')
         return
     if event['user'] not in [Bot.bot_id, Bot.user_id]:
         # Keep from reacting to own reaction
+        logg.debug(f'Registering react in {channel}')
         try:
             Bot.state_store['reacts'].add(f'{channel}|{event["item"]["ts"]}')
         except Exception as e:

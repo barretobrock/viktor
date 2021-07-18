@@ -339,9 +339,4 @@ class PhraseBuilders:
         resp = requests.get('https://icanhazdadjoke.com/',  headers={'Accept': 'application/json'})
         if resp.status_code == 200:
             result = resp.json()
-            jid = result.get("id")
-            url = f'https://icanhazdadjoke.com/j/{jid}'
-            return [
-                bkb.make_context_section([bkb.markdown_section(f'Dadjoke `{jid}`')]),
-                bkb.make_block_section(f'{result.get("joke")}')
-            ]
+            return result.get("joke")
