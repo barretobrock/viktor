@@ -1,11 +1,20 @@
-from sqlalchemy import Column, VARCHAR, Integer
+from sqlalchemy import (
+    Column,
+    TEXT,
+    Integer
+)
 # local imports
-from .base import Base
+from viktor.model.base import Base
 
 
 class TableUwu(Base):
-    """emoji table - stores new emoji info"""
-    __tablename__ = 'uwu_graphics'
+    """uwu table - stores uwu graphics for /uwu command"""
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    graphic = Column(VARCHAR, nullable=False)
+    uwu_id = Column(Integer, primary_key=True, autoincrement=True)
+    graphic = Column(TEXT, nullable=False)
+
+    def __init__(self, graphic_txt: str):
+        self.graphic = graphic_txt
+
+    def __repr__(self) -> str:
+        return f'<TableUwu(text_len={len(self.graphic)}>'

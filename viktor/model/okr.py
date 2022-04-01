@@ -1,27 +1,63 @@
-from sqlalchemy import Column, VARCHAR, Integer, ForeignKey, Float, TEXT, TIMESTAMP, Boolean, func
+from datetime import datetime
+from sqlalchemy import (
+    Column,
+    Boolean,
+    VARCHAR,
+    Integer,
+    ForeignKey,
+    TEXT,
+    TIMESTAMP
+)
+from sqlalchemy.orm import relationship
 # local imports
-from .base import Base
+from viktor.model.base import Base
 
 
-class TablePerks(Base):
-    """perks table"""
-    __tablename__ = 'perks'
+class TablePerk(Base):
+    """perk table"""
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    perk_id = Column(Integer, primary_key=True, autoincrement=True)
     level = Column(Integer, nullable=False)
     desc = Column(TEXT)
 
+    def __init__(self, level: int, desc: str):
+        self.level = level
+        self.desc = desc
 
-class TableQuotes(Base):
-    """quotes table"""
-    __tablename__ = 'quotes'
+    def __repr__(self) -> str:
+        return f'<TablePerk(level={self.level}, desc={self.desc[:20]})>'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    author = Column(Integer, ForeignKey('users.id'), nullable=False)
-    channel = Column(VARCHAR, nullable=False)
-    pinner = Column(Integer, ForeignKey('users.id'), nullable=False)
+
+class TableQuote(Base):
+    """quote table
+
+    Args:
+        self.is_quotable: if True, can be used to grab a random quote from a user
+    """
+
+    quote_id = Column(Integer, primary_key=True, autoincrement=True)
+    author_key = Column(Integer, ForeignKey('viktor.slack_user.user_id'), nullable=False)
+    author = relationship('TableSlackUser', backref='quotes', foreign_keys=[author_key])
+    channel_key = Column(Integer, ForeignKey('viktor.slack_channel.channel_id'), nullable=False)
+    channel = relationship('TableSlackChannel', back_populates='pins', foreign_keys=[channel_key])
+    pinner_key = Column(Integer, ForeignKey('viktor.slack_user.user_id'), nullable=False)
+    pinner = relationship('TableSlackUser', backref='pins', foreign_keys=[pinner_key])
+    is_quotable = Column(Boolean, default=False, nullable=False)
     text = Column(TEXT, nullable=False)
-    link = Column(VARCHAR)
-    message_date = Column(TIMESTAMP, nullable=False)
-    pin_date = Column(TIMESTAMP, nullable=False)
-    created_date = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    link = Column(VARCHAR(255))
+    message_timestamp = Column(TIMESTAMP, nullable=False)
+    pin_timestamp = Column(TIMESTAMP, nullable=False)
+
+    def __init__(self, text: str, message_timestamp: datetime, pin_timestamp: datetime, is_quotable: bool = False,
+                 link: str = None, **kwargs):
+        self.text = text
+        self.message_timestamp = message_timestamp
+        self.pin_timestamp = pin_timestamp
+        self.is_quotable = is_quotable
+        self.link = link
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    def __repr__(self) -> str:
+        return f'<TableQuote(is_quotable={self.is_quotable}, text={self.text[:10]}, ' \
+               f'message_ts={self.message_timestamp}, pin_ts={self.pin_timestamp})>'

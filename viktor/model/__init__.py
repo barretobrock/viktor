@@ -1,9 +1,27 @@
-from .acronyms import AcronymTypes, TableAcronyms
+from .acronym import (
+    AcronymType,
+    TableAcronym
+)
 from .base import Base
-from .bot import TableBotSettings
-from .emojis import TableEmojis
-from .okr import TablePerks, TableQuotes
-from .responses import TableResponses, ResponseTypes, TableFacts, TableInsults, InsultTypes, TablePhrases, \
-    PhraseTypes, TableCompliments, ComplimentTypes, FactTypes
-from .users import TableUsers
+from .channel import TableSlackChannel
+from .emoji import TableEmoji
+from .okr import (
+    TablePerk,
+    TableQuote
+)
+from .response import (
+    ResponseCategory,
+    ResponseType,
+    TableResponse,
+)
+from .setting import (
+    BotSettingType,
+    ChannelSettingType,
+    TableBotSetting,
+    TableChannelSetting
+)
+from .user import (
+    TableSlackUser,
+    TableSlackUserChangeLog
+)
 from .uwu import TableUwu
