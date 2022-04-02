@@ -5,6 +5,7 @@ from .acronym import (
 from .base import Base
 from .channel import TableSlackChannel
 from .emoji import TableEmoji
+from .error import TableError
 from .okr import (
     TablePerk,
     TableQuote
