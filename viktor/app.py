@@ -1,21 +1,42 @@
 import json
 import signal
 import requests
-from datetime import datetime, timedelta
+from datetime import (
+    datetime,
+    timedelta
+)
 from random import choice
-from flask import Flask, request, make_response
-from flask_sqlalchemy import SQLAlchemy
-from slacktools import SlackEventAdapter, SecretStore, BlockKitBuilder as bkb
+from flask import (
+    Flask,
+    request,
+    make_response
+)
+from sqlalchemy.sql import and_
+from slacktools import (
+    SlackEventAdapter,
+    SecretStore,
+    BlockKitBuilder as bkb
+)
 from easylogger import Log
 import viktor.bot_base as botbase
-from .model import TableEmojis, TableUsers, TableResponses, ResponseTypes
-from .settings import auto_config
-from .utils import collect_pins
+from viktor.db_eng import ViktorPSQLClient
+from viktor.model import (
+    TableEmoji,
+    TableSlackUser,
+    TableResponse,
+    ResponseCategory,
+    ResponseType
+)
+from viktor.settings import auto_config
+from viktor.utils import collect_pins
 
 bot_name = auto_config.BOT_NICKNAME
 logg = Log(bot_name, log_to_file=True)
 
 credstore = SecretStore('secretprops-bobdev.kdbx')
+# Set up database connection
+conn_dict = credstore.get_entry(f'davaidb-{auto_config.ENV.lower()}').custom_properties
+auto_config.start_engine(params_dict=conn_dict)
 vik_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Starting up app...')
@@ -26,12 +47,16 @@ logg.debug('Building user list')
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = auto_config.DB_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+eng = ViktorPSQLClient(props=conn_dict, parent_log=logg)
+# db = SQLAlchemy(app)
 
 logg.debug('Instantiating bot...')
 Bot = botbase.Viktor(parent_log=logg)
-RESPONSES = [x.text for x in
-             db.session.query(TableResponses).filter(TableResponses.type == ResponseTypes.general).all()]
+with eng.session_mgr() as sess:
+    RESPONSES = sess.query(TableResponse.text).filter(and_(
+        TableResponse.type == ResponseType.GENERAL,
+        TableResponse.category == ResponseCategory.STANDARD
+    ))
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
@@ -98,7 +123,9 @@ def handle_cron_new_emojis():
     #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/new_emojis
     now = datetime.utcnow()
     interval = (now - timedelta(minutes=60))
-    new_emojis = db.session.query(TableEmojis).filter(TableEmojis.created_date > interval).all()
+    with eng.session_mgr() as session:
+        new_emojis = session.query(TableEmoji).filter(TableEmoji.created_date > interval).all()
+        session.expunge_all()
     if len(new_emojis) > 0:
         # Go about notifying channel of newly uploaded emojis
         emojis = [f':{x.name}:' for x in new_emojis]
@@ -117,7 +144,16 @@ def handle_cron_new_emojis():
 
 @app.route("/cron/profile_update", methods=['POST'])
 def handle_cron_profile_update():
-    """Check for newly updated profile elements (triggered by cron task that sends POST req every 10 mins)"""
+    """Check for newly updated profile elements (triggered by cron task that sends POST req every 1 hr)"""
+    # Check emojis uploaded (every 60 mins)
+    # This url is hit in crontab as such:
+    #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/reacts
+    # TODO: Methodolgy...
+    #   since Slack pushes a /user_change event for every minor change, we should wait before logging that change
+    #   so what we'll do here is, every hour, compare what's in the users table against what's in the change log.
+    #   We should also expect the situation that the user doesn't appear in the change log, and if that happens,
+    #   have an option to 'mute' the announcement for that user.
+
     # Check updated profile (every 10 mins)
     # if len(Bot.user_updates_dict) > 0:
     #     # Go about notifying channel of newly uploaded emojis
@@ -173,6 +209,10 @@ def handle_cron_reacts():
 def reaction(event_data: dict):
     event = event_data['event']
     channel = event['item']['channel']
+    with eng.session_mgr() as session:
+        session.query(TableEmoji).filter(TableEmoji.name == event['reaction']).update({
+            'reaction_count': TableEmoji.reaction_count + 1
+        })
     if channel in auto_config.DENY_LIST_CHANNELS:
         logg.debug(f'Bypassing react in denylisted channel.')
         return
@@ -203,22 +243,34 @@ def handle_slash():
 
 
 @bot_events.on('emoji_changed')
-def notify_new_emojis(event_data):
+def record_new_emojis(event_data):
     event = event_data['event']
     # Make a post about a new emoji being added in the #emoji_suggestions channel
-    if event['subtype'] == 'add':
+    event_subtype = event['subtype']
+    if event_subtype == 'add':
         emoji = event['name']
-        db.session.add(TableEmojis(name=emoji))
-        db.session.commit()
+        with eng.session_mgr() as session:
+            session.add(TableEmoji(name=emoji))
+    elif event_subtype == 'rename':
+        emoji = event['old_name']
+        new_name = event['new_name']
+        with eng.session_mgr() as session:
+            session.query(TableEmoji).filter(TableEmoji.name == emoji).update({'name': new_name})
+    elif event_subtype == 'remove':
+        # For some reason, this gets passed as a list, so we'll name it accordingly
+        emojis = event['names']
+        with eng.session_mgr() as session:
+            session.query(TableEmoji).filter(TableEmoji.name.in_(emojis)).update({'is_deleted': True})
 
 
 @bot_events.on('pin_added')
 def store_pins(event_data):
     event = event_data['event']
-    tbl_obj = collect_pins(event, session=db.session, log=logg)
+    tbl_obj = collect_pins(event, psql_client=eng, log=logg)
     # Add to db
-    db.session.add(tbl_obj)
-    db.session.commit()
+    with eng.session_mgr() as session:
+        session.add(tbl_obj)
+
     Bot.st.send_message(channel=event['channel_id'], message='Pin successfully added, kommanderovnik o7')
 
 
@@ -230,16 +282,39 @@ def notify_new_statuses(event_data):
     user_info = event['user']
     uid = user_info['id']
     # Look up user in db
-    user = db.session.query(TableUsers).filter(TableUsers.slack_id == uid).one_or_none()
+    with eng.session_mgr() as session:
+        user = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == uid).one_or_none()
+        if user is not None:
+            session.expunge(user)
+        else:
+            logg.warning(f'Couldn\'t find user: {uid} \n {user_info}')
+            return
     if user is not None:
         # get display name
         profile = user_info.get('profile')
-        dis_name = profile.get('display_name') if profile.get('display_name') != '' else profile.get('real_name')
-        if user.name != dis_name:
-            # update the table
-            user.name = dis_name
-            db.session.commit()
-            logg.debug(f'Name {dis_name} updated in db...')
+        display_name = profile.get('display_name')
+        real_name = profile.get('real_name')
+        status_emoji = profile.get('status_emoji', '')
+        status_text = profile.get('status_text', '')
+        avi_link = profile.get('image_512')
+        if any([
+            user.display_name != display_name,
+            user.real_name != real_name,
+            user.status_emoji != status_emoji,
+            user.status_text != status_text,
+            user.avatar_link != avi_link
+        ]):
+            # Update the user
+            with eng.session_mgr() as session:
+                session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == uid).update({
+                    'real_name': real_name,
+                    'display_name': display_name,
+                    'avatar_link': avi_link,
+                    'status_emoji': status_emoji,
+                    'status_text': status_text
+                })
+            logg.debug(f'User {display_name} updated in db.')
+
     # if uid in Bot.users_dict.keys():
     #     # Get what info we've already stored on the user
     #     current_user_dict = Bot.users_dict[uid]
