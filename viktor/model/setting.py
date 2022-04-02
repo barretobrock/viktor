@@ -14,6 +14,9 @@ from viktor.model.base import Base
 
 class BotSettingType(enum.Enum):
     IS_ANNOUNCE_STARTUP = enum.auto()
+    IS_ANNOUNCE_SHUTDOWN = enum.auto()
+    IS_ALLOW_GLOBAL_REACTION = enum.auto()
+    IS_POST_ERR_TRACEBACK = enum.auto()
 
 
 class TableBotSetting(Base):

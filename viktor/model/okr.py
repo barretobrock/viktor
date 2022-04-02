@@ -36,12 +36,12 @@ class TableQuote(Base):
     """
 
     quote_id = Column(Integer, primary_key=True, autoincrement=True)
-    author_key = Column(Integer, ForeignKey('viktor.slack_user.user_id'), nullable=False)
-    author = relationship('TableSlackUser', backref='quotes', foreign_keys=[author_key])
+    author_user_key = Column(Integer, ForeignKey('viktor.slack_user.user_id'), nullable=False)
+    author = relationship('TableSlackUser', backref='quotes', foreign_keys=[author_user_key])
     channel_key = Column(Integer, ForeignKey('viktor.slack_channel.channel_id'), nullable=False)
     channel = relationship('TableSlackChannel', back_populates='pins', foreign_keys=[channel_key])
-    pinner_key = Column(Integer, ForeignKey('viktor.slack_user.user_id'), nullable=False)
-    pinner = relationship('TableSlackUser', backref='pins', foreign_keys=[pinner_key])
+    pinner_user_key = Column(Integer, ForeignKey('viktor.slack_user.user_id'), nullable=False)
+    pinner = relationship('TableSlackUser', backref='pins', foreign_keys=[pinner_user_key])
     is_quotable = Column(Boolean, default=False, nullable=False)
     text = Column(TEXT, nullable=False)
     link = Column(VARCHAR(255))
