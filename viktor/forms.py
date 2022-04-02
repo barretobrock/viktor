@@ -1,6 +1,8 @@
-from random import choice
 from typing import List, Dict
-from slacktools import BlockKitBuilder as bkb, SlackTools
+from slacktools import (
+     BlockKitBuilder as bkb,
+     SlackTools
+)
 
 
 class Forms:

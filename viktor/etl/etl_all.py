@@ -15,13 +15,13 @@ from viktor.model import (
     AcronymType,
     Base,
     BotSettingType,
-    ChannelSettingType,
     ResponseCategory,
     ResponseType,
     TableAcronym,
     TableBotSetting,
     TableChannelSetting,
     TableEmoji,
+    TableError,
     TablePerk,
     TableQuote,
     TableResponse,
@@ -38,17 +38,16 @@ from viktor.utils import collect_pins
 class ETL:
     """For holding all the various ETL processes, delimited by table name or function of data stored"""
     ALL_TABLES = [
-        # Relied-on tables first
-        TableSlackUser,
-        TableSlackChannel,
-        # All the other tables
         TableAcronym,
         TableBotSetting,
+        TableChannelSetting,
         TableEmoji,
+        TableError,
         TablePerk,
         TableQuote,
         TableResponse,
-        TableChannelSetting,
+        TableSlackChannel,
+        TableSlackUser,
         TableSlackUserChangeLog,
         TableUwu
     ]
@@ -66,7 +65,8 @@ class ETL:
         self.log.debug(f'Dropping tables: {tables} from db...')
         tbl_objs = []
         for table in tables:
-            tbl_objs.append(Base.metadata.tables.get(f'{table.__table_args__.get("schema")}.{table.__tablename__}'))
+            tbl_objs.append(
+                Base.metadata.tables.get(f'{table.__table_args__.get("schema")}.{table.__tablename__}'))
         Base.metadata.drop_all(self.psql_client.engine, tables=tbl_objs)
         self.log.debug('Establishing database...')
         Base.metadata.create_all(self.psql_client.engine, tables=tbl_objs)
@@ -77,14 +77,25 @@ class ETL:
         self.st = SlackTools(credstore, auto_config.BOT_NICKNAME, self.log)
         self.log.debug('Completed loading services')
 
+    def etl_bot_settings(self):
+        self.log.debug('Working on settings...')
+        bot_settings = []
+        for bot_setting in list(BotSettingType):
+            value = 1 if bot_setting.name.startswith('IS_') else 0
+            bot_settings.append(TableBotSetting(setting_name=bot_setting, setting_int=value))
+
+        with self.psql_client.session_mgr() as session:
+            self.log.debug(f'Adding {len(bot_settings)} bot settings.')
+            session.add_all(bot_settings)
+
     def etl_acronyms(self):
         self.log.debug('Working on acronyms...')
         df = self.gsr.get_sheet('acronyms')
         col_mapping = {
-            'standard': AcronymType.standard,
-            'f': AcronymType.fun,
-            'i': AcronymType.work,
-            'urban': AcronymType.urban
+            'standard': AcronymType.STANDARD,
+            'f': AcronymType.FUN,
+            'i': AcronymType.WORK,
+            'urban': AcronymType.URBAN
         }
         acro_objs = []
         for col in df.columns.tolist():
@@ -117,19 +128,30 @@ class ETL:
         usr_tbls = []
         for user in users:
             display_name = user['display_name']
-            name = display_name if display_name != '' else user['real_name']
+            real_name = user['real_name']
+            display_name = real_name if display_name == '' else display_name
             uid = user['id']
             role_row = roles.loc[roles['user'] == uid, :]
-            if role_row.empty:
-                usr_tbls.append(
-                    TableSlackUser(slack_user_hash=uid, real_name=name, display_name=display_name)
-                )
-            else:
-                usr_tbls.append(
-                    TableSlackUser(slack_user_hash=uid, real_name=name, display_name=display_name,
-                                   role_title=role_row['role'].values[0], role_desc=role_row['desc'].values[0],
-                                   level=role_row['level'].values[0], ltits=role_row['ltits'].values[0])
-                )
+            params = dict(
+                slack_user_hash=uid,
+                real_name=real_name,
+                display_name=display_name,
+                avatar_link=user['avi']
+            )
+            if not role_row.empty:
+                params.update({
+                    'role_title': role_row['role'].values[0],
+                    'role_desc': role_row['desc'].values[0],
+                    'level': role_row['level'].values[0],
+                    'ltits': role_row['ltits'].values[0]
+                })
+            usr_tbls.append(
+                TableSlackUser(**params)
+            )
+        # Add slackbot
+        usr_tbls.append(TableSlackUser(slack_user_hash='USLACKBOT', real_name='slackbot', display_name='slackboi'))
+        usr_tbls.append(TableSlackUser(slack_user_hash='UUNKNOWN', slack_bot_hash='BUNKNOWN', real_name='abot',
+                                       display_name='a-bot'))
         with self.psql_client.session_mgr() as session:
             self.log.debug(f'Adding {len(usr_tbls)} user details to table...')
             session.add_all(usr_tbls)
@@ -226,6 +248,21 @@ class ETL:
         self._parse_df('uwu_graphics', tbl_name='uwu_graphics')
         self.log.debug('Completed response ETL')
 
+    def etl_slack_channels(self):
+        """Adds slack channels"""
+        channels = []
+        channels_resp = self.st.bot.conversations_list(limit=1000, types='public_channel,private_channel')
+        for ch in channels_resp.get('channels'):
+
+            if not ch['is_channel'] or ch['name'].startswith('shitpost'):
+                continue
+            self.log.debug(f'Adding {ch["name"]}')
+            channels.append(TableSlackChannel(slack_channel_hash=ch['id'], channel_name=ch['name'],
+                                              is_private=ch['is_private']))
+        with self.psql_client.session_mgr() as session:
+            self.log.debug(f'Adding {len(channels)} channels...')
+            session.add_all(channels)
+
     def etl_quotes(self):
         # Users
         self.log.debug('Working on quotes...')
@@ -254,22 +291,25 @@ class ETL:
                 pins_resp = {'items': []}
             pins = pins_resp.get('items')
             for pin in pins:
-                tbl_objs.append(collect_pins(pin, session=self.session, log=self.log))
+                tbl_objs.append(collect_pins(pin, psql_client=self.psql_client, log=self.log))
             # Wait so we don't exceed call limits
             if prev_len < len(tbl_objs):
                 self.log.debug('Cooling off')
                 time.sleep(3)
             prev_len = len(tbl_objs)
-        self.session.add_all(tbl_objs)
+        with self.psql_client.session_mgr() as session:
+            session.add_all(tbl_objs)
         self.log.debug(f'Added {len(tbl_objs)} pins')
-        self.session.commit()
 
 
 if __name__ == '__main__':
+    from viktor.model import TableResponse
     etl = ETL(tables=ETL.ALL_TABLES, env='dev')
-    # etl.etl_acronyms()
-    # etl.etl_emojis()
-    # etl.etl_okr_perks()
-    # etl.etl_okr_users()
-    # etl.etl_quotes()
+    etl.etl_acronyms()
+    etl.etl_emojis()
+    etl.etl_okr_perks()
+    etl.etl_okr_users()
+    etl.etl_slack_channels()
+    etl.etl_quotes()
     etl.etl_responses()
+    etl.etl_bot_settings()

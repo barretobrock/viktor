@@ -4,7 +4,13 @@ import re
 import requests
 import numpy as np
 import urllib.parse as parse
-from typing import Optional, List, Union, Dict, Tuple
+from typing import (
+    Optional,
+    List,
+    Union,
+    Dict,
+    Tuple
+)
 from io import StringIO
 from lxml import etree
 from slacktools import BlockKitBuilder as bkb
@@ -52,9 +58,9 @@ class Linguistics:
             return ' '.join(final_results)
 
         def get_title_and_desc(res: etree.ElementBase) -> Tuple[str, str]:
-            title = extract_text(res, './div/a')
-            text = extract_text(res, './div/section')
-            return title, text
+            _title = extract_text(res, './div/a')
+            _text = extract_text(res, './div/section')
+            return _title, _text
 
         word = re.sub(pattern, '', message).strip()
 

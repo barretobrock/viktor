@@ -6,21 +6,47 @@ import string
 import sys
 import requests
 from datetime import datetime
-from typing import List, Optional, Union, Dict
+from typing import (
+    List,
+    Optional,
+    Union,
+    Dict
+)
 from urllib.parse import urlparse
 import pandas as pd
 import numpy as np
-import slack.errors
+from slack.errors import SlackApiError
 from datetime import datetime as dt
-from random import randint, choice
-from slacktools import SlackBotBase, BlockKitBuilder as bkb
+from random import (
+    randint,
+    choice
+)
+from sqlalchemy.sql import (
+    and_,
+    func,
+    not_
+)
+from slacktools import (
+    SlackBotBase,
+    BlockKitBuilder as bkb
+)
 from easylogger import Log
 import viktor.app as vik_app
-from .linguistics import Linguistics
-from .phrases import PhraseBuilders, recursive_uwu
-from .settings import auto_config
-from .model import TableUsers, TableEmojis, TablePerks, TableFacts, FactTypes
-from .forms import Forms
+from viktor.linguistics import Linguistics
+from viktor.phrases import (
+    PhraseBuilders,
+    recursive_uwu
+)
+from viktor.settings import auto_config
+from viktor.model import (
+    ResponseType,
+    ResponseCategory,
+    TableEmoji,
+    TablePerk,
+    TableResponse,
+    TableSlackUser
+)
+from viktor.forms import Forms
 
 
 class Viktor:
@@ -372,6 +398,7 @@ class Viktor:
 
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
+        _ = args
         notify_block = [
             bkb.make_context_section([
                 bkb.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
@@ -412,8 +439,9 @@ class Viktor:
             # Update the description part of the role. Title should already be updated in p1
             user_obj = self._get_user_obj(user)
             if action_value != user_obj.role_desc:
-                user_obj.role_desc = action_value
-                vik_app.db.session.commit()
+                with vik_app.eng.session_mgr() as session:
+                    session.refresh(user_obj)
+                    user_obj.role_desc = action_value
             self.build_role_txt(channel=channel, user=user)
         elif action_id == 'levelup-user':
             self.update_user_level(channel=channel, requesting_user=user,
@@ -473,7 +501,7 @@ class Viktor:
                     try:
                         self.st.send_message(channel, message='uwu',
                                              blocks=replaced_blocks)
-                    except slack.errors.SlackApiError:
+                    except SlackApiError:
                         # Most likely because the block was a standard rich text one, which isn't allowed.
                         #   Fall back to basic text.
                         self.st.send_message(channel, message=PhraseBuilders.uwu(msg_text))
@@ -493,7 +521,7 @@ class Viktor:
                     try:
                         self.st.send_message(channel, message='word emoji',
                                              blocks=replaced_blocks)
-                    except slack.errors.SlackApiError:
+                    except SlackApiError:
                         # Most likely because the block was a standard rich text one, which isn't allowed.
                         #   Fall back to basic text.
                         self.st.send_message(channel, message=self.word_emoji(msg_text))
@@ -574,8 +602,9 @@ class Viktor:
     @staticmethod
     def refresh_emojis() -> List[str]:
         """Refreshes the list of emojis"""
-        return [x.name for x in
-                vik_app.db.session.query(TableEmojis).filter(TableEmojis.is_denylisted == False).all()]
+        with vik_app.eng.session_mgr() as session:
+            emojis = session.query(TableEmoji.name).filter(not_(TableEmoji.is_react_denylisted)).all()
+        return emojis
 
     def get_emojis_like(self, match_pattern: str, message: str, max_res: int = 500) -> str:
         """Gets emojis matching in the system that match a given regex pattern"""
@@ -609,21 +638,18 @@ class Viktor:
     @staticmethod
     def sarcastic_response() -> str:
         """Sends back a sarcastic response when user is not allowed to use the action requested"""
-        sarcastic_reponses = [
-            ''.join([':ah-ah-ah:'] * randint(0, 50)),
-            'Lol <@{user}>... here ya go bruv :pick:',
-            'Nah boo, we good.',
-            'Yeah, how about you go on ahead and, you know, do that yourself.'
-            ':bye_felicia:'
-        ]
-
-        return sarcastic_reponses[randint(0, len(sarcastic_reponses) - 1)]
+        with vik_app.eng.session_mgr() as session:
+            resp = session.query(TableResponse.text).filter(and_(
+                TableResponse.type == ResponseType.GENERAL,
+                TableResponse.category == ResponseCategory.SARCASTIC
+            )).order_by(func.random()).limit(1).one().text
+            return resp
 
     @staticmethod
     def giggle() -> str:
         """Laughs, uncontrollably at times"""
         # Count the 'no's
-        laugh_cycles = randint(1, 500)
+        laugh_cycles = randint(1, 1000)
         response = f'ti{"hi" * laugh_cycles}!'
         return response
 
@@ -670,6 +696,16 @@ class Viktor:
             "'": ':air_quotes:',
             '"': ':air_quotes:',
             ' ': ':blank:',
+            '1': ':one:',
+            '2': ':two:',
+            '3': ':three:',
+            '4': ':four:',
+            '5': ':five:',
+            '6': ':six:',
+            '7': ':seven:',
+            '8': ':eight:',
+            '9': ':nine:',
+            '0': ':zero:',
         })
         return ''.join(char_dict[c.lower()] if c.lower() in char_dict.keys() else c for c in msg)
 
@@ -800,14 +836,14 @@ class Viktor:
     def add_emoji_form_p1(self, user: str, channel: str):
         """Builds form to intake emoji and upload"""
         form1 = Forms.build_new_emoji_form_p1()
-        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
-                                               blocks=form1)
+        _ = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
+                                            blocks=form1)
 
     def add_emoji_form_p2(self, user: str, channel: str, url: str, suggested_name: str):
         """Part 2 of emoji intake"""
         form2 = Forms.build_new_emoji_form_p2(url, suggested_name=suggested_name)
-        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
-                                               blocks=form2)
+        _ = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
+                                            blocks=form2)
 
     def add_emoji(self, user: str, channel: str, url: str, new_name: str):
         """Attempts to upload new emoji"""
@@ -822,13 +858,13 @@ class Viktor:
 
     def add_ifact_form(self, user: str, channel: str):
         """Builds form to intake new fact"""
-        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New ifact form',
-                                               blocks=Forms.build_ifact_input_form_p1())
+        _ = self.st.private_channel_message(user_id=user, channel=channel, message='New ifact form',
+                                            blocks=Forms.build_ifact_input_form_p1())
 
     def add_ifact(self, user: str, channel: str, txt: str):
-        fact = TableFacts(type=FactTypes.conspiracy, text=txt)
-        vik_app.db.session.add(fact)
-        vik_app.db.session.commit()
+        fact = TableResponse(response_type=ResponseType.FACT, category=ResponseCategory.FOILHAT, text=txt)
+        with vik_app.eng.session_mgr() as session:
+            session.add(fact)
         self.st.send_message(channel=channel, message=f'Fact added! id:`{fact.id}`\n{fact.text}')
 
     # Phrase building methods
@@ -836,11 +872,11 @@ class Viktor:
 
     @staticmethod
     def facts():
-        return PhraseBuilders.facts(grp='standard')
+        return PhraseBuilders.facts(category=ResponseCategory.STANDARD)
 
     @staticmethod
     def conspiracy_fact():
-        return PhraseBuilders.facts(grp='conspiracy')
+        return PhraseBuilders.facts(category=ResponseCategory.FOILHAT)
 
     # OKR Methods
     # ------------------------------------------------
@@ -863,7 +899,9 @@ class Viktor:
 
     def show_all_perks(self) -> List[Dict]:
         """Displays all the perks"""
-        perks = vik_app.db.session.query(TablePerks).all()
+        with vik_app.eng.session_mgr() as session:
+            perks = session.query(TablePerk).all()
+            session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
             bkb.make_header('OKR Perks!'),
@@ -874,7 +912,7 @@ class Viktor:
         ]
 
     @staticmethod
-    def _build_perks_list(perks: List[TablePerks]) -> List[str]:
+    def _build_perks_list(perks: List[TablePerk]) -> List[str]:
         """Builds out a formatted list of perks based on a filtered query result from the table"""
         perk_dict = {}
         for perk in perks:
@@ -895,18 +933,22 @@ class Viktor:
     def show_my_perks(self, user: str) -> Union[List[Dict], str]:
         """Lists the perks granted at the user's current level"""
         # Get the user's level
-        user_data = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
-        if user_data is None:
+        with vik_app.eng.session_mgr() as session:
+            user_obj = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == user).one_or_none()
+            session.expunge(user_obj)
+        if user_obj is None:
             return 'User not found in OKR roles sheet :frowning:'
 
-        level = user_data.level
-        ltits = user_data.ltits
+        level = user_obj.level
+        ltits = user_obj.ltits
 
         # Get perks
-        perks = vik_app.db.session.query(TablePerks).filter(TablePerks.level <= level).all()
+        with vik_app.eng.session_mgr() as session:
+            perks = session.query(TablePerk).filter(TablePerk.level <= level).all()
+            session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
-            bkb.make_header(f'Perks for {user_data.name.title()}!'),
+            bkb.make_header(f'Perks for our very highly valued `{user_obj.name}`!'),
             bkb.make_context_section([
                 bkb.markdown_section('you\'ll _really_ never see anything better, trust us!')
             ]),
@@ -916,33 +958,37 @@ class Viktor:
         ]
 
     @staticmethod
-    def _get_user_obj(user: str) -> TableUsers:
-        return vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
+    def _get_user_obj(user: str) -> TableSlackUser:
+        with vik_app.eng.session_mgr() as session:
+            user_obj = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == user).one_or_none()
+            session.expunge(user_obj)
+        return user_obj
 
     def new_role_form_p1(self, user: str, channel: str):
         """Builds form to intake emoji and upload"""
         # Load user
         user_obj = self._get_user_obj(user)
         form1 = Forms.build_role_input_form_p1(existing_title=user_obj.role)
-        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p1',
-                                               blocks=form1)
+        _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p1',
+                                            blocks=form1)
 
     def new_role_form_p2(self, user: str, channel: str, new_title: str):
         """Part 2 of new role intake"""
         # Load user
         user_obj = self._get_user_obj(user)
         if new_title != user_obj.role:
-            user_obj.role = new_title
-            vik_app.db.session.commit()
+            with vik_app.eng.session_mgr() as session:
+                session.refresh(user_obj)
+                user_obj.role = new_title
         form2 = Forms.build_role_input_form_p2(title=new_title, existing_desc=user_obj.role_desc)
-        resp = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p2',
-                                               blocks=form2)
+        _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p2',
+                                            blocks=form2)
 
     def update_user_level(self, channel: str, requesting_user: str, target_user: str) -> Optional[str]:
         """Increment the user's level"""
 
         if requesting_user not in self.approved_users:
-            return 'LOL sorry, levelups are CEO-approved only'
+            return 'LOL sorry, levelups are SLT-approved only. If you\'re already SLT, it\'s the _other_ SLT tihi'
 
         if target_user == 'UPLAE3N67':
             # Some people should stay permanently at lvl 1
@@ -951,8 +997,9 @@ class Viktor:
         user_obj = self._get_user_obj(target_user)
         if user_obj is None:
             return f'user <@{target_user}> not found in HR records... :nervous_peach:'
-        user_obj.level += 1
-        vik_app.db.session.commit()
+        with vik_app.eng.session_mgr() as session:
+            session.refresh(user_obj)
+            user_obj.level += 1
         self.st.send_message(channel, f'Level for *`{user_obj.name}`* updated to *`{user_obj.level}`*.')
 
     def update_user_ltips(self, channel: str, requesting_user: str, target_user: str, ltits: float) -> \
@@ -960,20 +1007,21 @@ class Viktor:
         """Increment the user's level"""
 
         if requesting_user not in self.approved_users:
-            return 'LOL sorry, LTIT distributions are CEO-approved only'
+            return 'LOL sorry, LTIT distributions are SLT-approved only'
 
         user_obj = self._get_user_obj(target_user)
         if user_obj is None:
             return f'user <@{target_user}> not found in HR records... :nervous_peach:'
-        user_obj.ltits += ltits
-        vik_app.db.session.commit()
+        with vik_app.eng.session_mgr() as session:
+            session.refresh(user_obj)
+            user_obj.ltits += ltits
         self.st.send_message(
             channel, f'LTITs for  *`{user_obj.name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.')
 
     @staticmethod
     def show_roles(user: str = None) -> Union[List[Dict], str]:
         """Prints users roles to channel"""
-        def build_employee_info(emp: TableUsers) -> str:
+        def build_employee_info(emp: TableSlackUser) -> str:
             """Build out an individual line of an employee's info"""
             role = emp.role
             role_desc = emp.role_desc
@@ -996,13 +1044,18 @@ class Viktor:
                 ])
             ]
             # Iterate through roles, print them out
-            for u in vik_app.db.session.query(TableUsers).filter(TableUsers.level > 0).all():
-                roles_output.append(bkb.make_block_section([build_employee_info(emp=u)]))
+            with vik_app.eng.session_mgr() as session:
+                users = session.query(TableSlackUser).all()
+                session.expunge_all()
+            roles_output += [bkb.make_block_section([build_employee_info(emp=u)]) for u in users]
         else:
             # Printing role for an individual user
-            user_obj = vik_app.db.session.query(TableUsers).filter(TableUsers.slack_id == user).one_or_none()
-            if user is None:
-                return f'user <@{user}> not found in HR records... :nervous_peach:'
+            with vik_app.eng.session_mgr() as session:
+                user_obj = session.query(TableSlackUser).filter(
+                    TableSlackUser.slack_user_hash == user).one_or_none()
+                if user_obj is None:
+                    return f'user <@{user}> not found in HR records... :nervous_peach:'
+                session.expunge(user_obj)
             roles_output.append(bkb.make_block_section([build_employee_info(emp=user_obj)]))
 
         return roles_output
