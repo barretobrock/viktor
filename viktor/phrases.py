@@ -168,7 +168,7 @@ class PhraseBuilders:
             )).order_by(func.random()).limit(1).one_or_none()
             if resp is None:
                 return f'Cannot find combo in table: {resp_type.name} + {category.name}'
-            return resp.type
+            return resp.text
 
     @classmethod
     def sh_response(cls) -> str:
@@ -197,7 +197,8 @@ class PhraseBuilders:
         n_times = int(n_times) if n_times.isnumeric() else 3
         # Select the acronym list to use, verify that we have some words in that group
         with vik_app.eng.session_mgr() as session:
-            words = session.query(TableAcronym.text).filter(TableAcronym.type == acronym_group).all()
+            words = [x.text for x in session.query(TableAcronym).filter(TableAcronym.type == acronym_group).all()]
+
         if len(words) == 0:
             return f'Unable to find an acronym group for {acronym_group_str}'
 
@@ -237,6 +238,7 @@ class PhraseBuilders:
                 TableResponse.type == ResponseType[cmd.upper()],
                 TableResponse.category == category
             )).all()
+            session.expunge_all()
 
         if len(words) == 0:
             return f'Unable to find a(n) {cmd} group for {category_str}'

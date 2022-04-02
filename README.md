@@ -35,6 +35,15 @@ pip3 install git+https://github.com/barretobrock/viktor.git#egg=viktor --upgrade
 python3 run.py
 ```
 
+## Local testing
+
+### Testing with responses
+For local testing with Slack responses, get a different terminal window open and initiate `ngrok` in it to test the webhook outside of the live endpoint
+```bash
+ngrok http 5003
+```
+Then in another window, run the script to get the bot/app running. Don't forget to change the URL in Slack's preferences.
+
 ## App Info
 
 ### Scopes

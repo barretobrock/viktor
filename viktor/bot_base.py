@@ -23,8 +23,7 @@ from random import (
 )
 from sqlalchemy.sql import (
     and_,
-    func,
-    not_
+    func
 )
 from slacktools import (
     SlackBotBase,
@@ -209,9 +208,9 @@ class Viktor:
                 'response': [self.conspiracy_fact],
             },
             r'^add conspiracyfacts?': {
-                'pattern': 'conspiracyfacts',
+                'pattern': 'add conspiracyfact(s)',
                 'cat': cat_notsouseful,
-                'desc': 'Generates a conspiracy fact',
+                'desc': 'Add a conspiracy fact',
                 'response': [self.add_ifact_form, 'user', 'channel'],
             },
             r'^emoji[s]? like': {
@@ -220,19 +219,13 @@ class Viktor:
                 'desc': 'Get emojis matching the regex pattern',
                 'response': [self.get_emojis_like, 'match_pattern', 'message'],
             },
-            r'^refresh emojis$': {
-                'pattern': 'refresh emojis',
-                'cat': cat_useful,
-                'desc': 'Makes Viktor aware of emojis that have been uploaded since his last reboot.',
-                'response': [self.refresh_emojis],
-            },
             r'^uwu': {
                 'pattern': 'uwu [-l <1 or 2>] <text_to_uwu>',
                 'cat': cat_notsouseful,
                 'desc': 'Makes text pwettiew and easiew to uwundewstand (defaults to highest uwu level)',
                 'response': [PhraseBuilders.uwu, 'raw_message'],
             },
-            r'(thanks|(no\s?)*\s(t[h]?ank\s?(you|u)))': {
+            r'(thanks|[no,\s]*\s(t[h]?ank\s?(you|u)))': {
                 'cat': cat_basic,
                 'desc': 'Thank Viktor for something',
                 'response': [self.overly_polite, 'message'],
@@ -369,11 +362,9 @@ class Viktor:
 
         self.st.message_test_channel(blocks=self.get_bootup_msg())
 
-        self.emoji_list = self.refresh_emojis()
         # Place to temporarily store things. Typical structure is activity -> user -> data
         self.state_store = {
-            'new-emoji': {},
-            'reacts': {}
+            'reacts': set()
         }
 
         self.log.debug(f'{self.bot_name} booted up!')
@@ -599,13 +590,6 @@ class Viktor:
                    '```{}```'.format(len(msgs), self.st.df_to_slack_table(res_df))
         return response
 
-    @staticmethod
-    def refresh_emojis() -> List[str]:
-        """Refreshes the list of emojis"""
-        with vik_app.eng.session_mgr() as session:
-            emojis = session.query(TableEmoji.name).filter(not_(TableEmoji.is_react_denylisted)).all()
-        return emojis
-
     def get_emojis_like(self, match_pattern: str, message: str, max_res: int = 500) -> str:
         """Gets emojis matching in the system that match a given regex pattern"""
 
@@ -659,7 +643,7 @@ class Viktor:
         # Count the 'no's
         no_cnt = message.count('no')
         no_cnt += 1
-        response = '{}, thank you!'.format(', '.join(['no'] * no_cnt)).capitalize()
+        response = '{}, thank you!'.format(' '.join(['no'] * no_cnt)).capitalize()
         return response
 
     @staticmethod
@@ -776,7 +760,8 @@ class Viktor:
                     f.write(img.content)
                 self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
 
-    def button_game(self, message: str):
+    @staticmethod
+    def button_game(message: str):
         """Renders 5 buttons that the user clicks - one button has a value that awards them points"""
         default_limit = 100
         limit = None
@@ -794,7 +779,9 @@ class Viktor:
         # Determine where to hide the value
         n_buttons = randint(5, 12)
         items = list(range(1, n_buttons + 1))
-        emojis = [self.emoji_list[x] for x in np.random.choice(len(self.emoji_list), len(items), False)]
+
+        with vik_app.eng.session_mgr() as session:
+            emojis = [x.name for x in session.query(TableEmoji).order_by(func.random()).limit(n_buttons).all()]
         rand_val = randint(1, n_buttons)
         # Pick two places where negative values should go
         neg_items = list(np.random.choice([x for x in items if x != rand_val], int(n_buttons * .8), False))
@@ -968,7 +955,7 @@ class Viktor:
         """Builds form to intake emoji and upload"""
         # Load user
         user_obj = self._get_user_obj(user)
-        form1 = Forms.build_role_input_form_p1(existing_title=user_obj.role)
+        form1 = Forms.build_role_input_form_p1(existing_title=user_obj.role_title)
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p1',
                                             blocks=form1)
 
@@ -976,10 +963,10 @@ class Viktor:
         """Part 2 of new role intake"""
         # Load user
         user_obj = self._get_user_obj(user)
-        if new_title != user_obj.role:
+        if new_title != user_obj.role_title:
             with vik_app.eng.session_mgr() as session:
                 session.refresh(user_obj)
-                user_obj.role = new_title
+                user_obj.role_title = new_title
         form2 = Forms.build_role_input_form_p2(title=new_title, existing_desc=user_obj.role_desc)
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p2',
                                             blocks=form2)
@@ -1023,7 +1010,7 @@ class Viktor:
         """Prints users roles to channel"""
         def build_employee_info(emp: TableSlackUser) -> str:
             """Build out an individual line of an employee's info"""
-            role = emp.role
+            role = emp.role_title
             role_desc = emp.role_desc
             if role is None:
                 role = 'You take the specifications from the customers, and you bring them ' \
@@ -1031,7 +1018,7 @@ class Viktor:
             if role_desc is None:
                 role_desc = 'What would you say... you do here?'
 
-            return f'*`{emp.name}`*: Level *`{emp.level}`* (*`{emp.ltits}`* LTITs)\n' \
+            return f'*`{emp.display_name}`*: Level *`{emp.level}`* (*`{emp.ltits}`* LTITs)\n' \
                    f'\t\t*{role}*\n\t\t\t{role_desc}'
 
         roles_output = []
