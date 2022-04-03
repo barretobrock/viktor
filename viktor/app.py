@@ -202,13 +202,13 @@ def handle_cron_profile_update():
         for attr in attrs:
             if attr not in updated_user.keys():
                 continue
-            blocks.append([
+            blocks += [
                 bkb.make_context_section(attr.title()),
                 bkb.make_block_section(
                     f"NEW:\n\t{updated_user.get(attr).get('new')}\n\n"
                     f"OLD:\n\t{updated_user.get(attr).get('old')}"),
                 bkb.make_block_divider()
-            ])
+            ]
         Bot.st.send_message(channel=Bot.general_channel, message='user profile update!', blocks=blocks)
 
     return make_response('', 200)
