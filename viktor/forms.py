@@ -1,4 +1,7 @@
-from typing import List, Dict
+from typing import (
+    List,
+    Dict
+)
 from slacktools import (
      BlockKitBuilder as bkb,
      SlackTools

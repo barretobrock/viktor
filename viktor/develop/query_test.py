@@ -1,14 +1,6 @@
-import re
-import time
-from typing import (
-    List,
-    Dict
-)
-from slack.errors import SlackApiError
 from easylogger import Log
 from slacktools import (
     SecretStore,
-    GSheetReader,
     SlackTools
 )
 from viktor.model import (
@@ -19,7 +11,6 @@ from viktor.model import (
     ResponseType,
     TableAcronym,
     TableBotSetting,
-    TableChannelSetting,
     TableEmoji,
     TablePerk,
     TableQuote,
@@ -35,21 +26,6 @@ from viktor.settings import auto_config
 
 class Qtest:
     """For holding all the various ETL processes, delimited by table name or function of data stored"""
-    ALL_TABLES = [
-        # Relied-on tables first
-        TableSlackUser,
-        TableSlackChannel,
-        # All the other tables
-        TableAcronym,
-        TableBotSetting,
-        TableEmoji,
-        TablePerk,
-        TableQuote,
-        TableResponse,
-        TableChannelSetting,
-        TableSlackUserChangeLog,
-        TableUwu
-    ]
 
     def __init__(self, env: str = 'dev'):
         self.log = Log('vik-etl', log_level_str='DEBUG', log_to_file=True)
@@ -75,8 +51,4 @@ if __name__ == '__main__':
     qtest = Qtest(env='dev')
 
     with qtest.psql_client.session_mgr() as session:
-        t = session.query(TableResponse).filter(and_(
-                TableResponse.type == ResponseType.FACT,
-                TableResponse.category == ResponseCategory.FOILHAT
-            )).order_by(func.random()).limit(1).one_or_none()
-        session.expunge(t)
+        pass

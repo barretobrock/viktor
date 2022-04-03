@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    Boolean,
     Column,
     VARCHAR,
     Integer,
@@ -19,23 +20,25 @@ class TableSlackUser(Base):
     slack_bot_hash = Column(VARCHAR(50), nullable=True)
     real_name = Column(VARCHAR(120), nullable=False)
     display_name = Column(VARCHAR(120), nullable=False)
-    avatar_link = Column(VARCHAR(255))
+    is_admin = Column(Boolean, default=False, nullable=False)
     status_emoji = Column(VARCHAR(150))
     status_title = Column(VARCHAR(255))
     role_title = Column(TEXT)
     role_desc = Column(TEXT)
     level = Column(Float(32), default=0, nullable=False)
     ltits = Column(Float(5), default=0, nullable=False)
+    avatar_link = Column(VARCHAR(255))
     change_logs = relationship('TableSlackUserChangeLog', back_populates='user')
 
-    def __init__(self, slack_user_hash: str, real_name: str, display_name: str, role_title: str = None,
-                 role_desc: str = None, level: float = 0., ltits: float = 0., avatar_link: str = None,
-                 status_emoji: str = None, status_title: str = None,
+    def __init__(self, slack_user_hash: str, real_name: str, display_name: str, is_admin: bool = False,
+                 role_title: str = None, role_desc: str = None, level: float = 0., ltits: float = 0.,
+                 avatar_link: str = None, status_emoji: str = None, status_title: str = None,
                  slack_bot_hash: str = None, **kwargs):
         self.slack_user_hash = slack_user_hash
         self.slack_bot_hash = slack_bot_hash
         self.real_name = real_name
         self.display_name = display_name
+        self.is_admin = is_admin
         self.role_title = role_title
         self.role_desc = role_desc
         self.level = level

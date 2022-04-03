@@ -1,9 +1,24 @@
 import traceback
-from typing import Dict
+from typing import (
+    Dict,
+    Optional,
+    Union
+)
 from contextlib import contextmanager
-from sqlalchemy.engine import create_engine, URL
+from sqlalchemy.engine import (
+    create_engine,
+    URL
+)
 from sqlalchemy.orm import sessionmaker
 from easylogger import Log
+from viktor.model import (
+    BotSettingType,
+    ErrorType,
+    TableBotSetting,
+    TableError,
+    TableSlackChannel,
+    TableSlackUser,
+)
 
 
 class ViktorPSQLClient:
@@ -34,37 +49,44 @@ class ViktorPSQLClient:
         finally:
             session.close()
 
-    # def get_service_setting(self, setting: SettingType) -> Union[int, bool]:
-    #     """Extracts all service settings"""
-    #     with self.session_mgr() as session:
-    #         result = session.\
-    #             query(TableServiceSetting).\
-    #             filter(TableServiceSetting.setting_name == setting).\
-    #             one_or_none()
-    #         if setting.name.startswith('IS_'):
-    #             return result.setting_int == 1
-    #         else:
-    #             return result.setting_int
+    def get_bot_setting(self, setting: BotSettingType) -> Optional[Union[int, bool]]:
+        """Attempts to return a given bot setting"""
+        with self.session_mgr() as session:
+            result = session.query(TableBotSetting).filter(TableBotSetting.setting_name == setting).one_or_none()
+            if result is None:
+                return result
+            if setting.name.startswith('IS_'):
+                # Boolean
+                return result.setting_int == 1
+            return result.setting_int
 
-    # def get_setting_non_ipdo_channel_messaging(self) -> bool:
-    #     """Pulls in the global IML service setting to determine if any external IPDO messages should be sent"""
-    #     return self.get_service_setting(setting=SettingType.IS_NOTIFY_NON_IPDO_CHANNELS)
-    #
-    # def get_setting_data_check_optimization(self) -> bool:
-    #     """Pulls in the global IML service setting to determine if any external IPDO messages should be sent"""
-    #     return self.get_service_setting(setting=SettingType.IS_OPTIMIZE_DATA_CHECKS)
+    def get_user_from_hash(self, user_hash: str) -> Optional[TableSlackUser]:
+        """Takes in a slack user hash, outputs the expunged object, if any"""
+        with self.session_mgr() as session:
+            user = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == user_hash).one_or_none()
+            if user is not None:
+                session.expunge(user)
+        return user
 
-    # def log_error_to_db(self, e: Exception, error_type: ErrorType, data_check_key: int = None,
-    #                     data_source_key: int = None, subscription_key: int = None):
-    #     """Logs error info to the service_error_log table"""
-    #     err = TableServiceError(
-    #         error_type=error_type,
-    #         error_class=e.__class__.__name__,
-    #         error_text=str(e),
-    #         error_traceback=''.join(traceback.format_tb(e.__traceback__)),
-    #         data_check_key=data_check_key,
-    #         data_source_key=data_source_key,
-    #         subscription_key=subscription_key
-    #     )
-    #     with self.session_mgr() as session:
-    #         session.add(err)
+    def get_channel_from_hash(self, channel_hash: str) -> Optional[TableSlackChannel]:
+        """Takes in a slack user hash, outputs the expunged object, if any"""
+        with self.session_mgr() as session:
+            channel = session.query(TableSlackChannel).\
+                filter(TableSlackChannel.slack_channel_hash == channel_hash).one_or_none()
+            if channel is not None:
+                session.expunge(channel)
+        return channel
+
+    def log_error_to_db(self, e: Exception, error_type: ErrorType, user_key: int = None,
+                        channel_key: int = None):
+        """Logs error info to the service_error_log table"""
+        err = TableError(
+            error_type=error_type,
+            error_class=e.__class__.__name__,
+            error_text=str(e),
+            error_traceback=''.join(traceback.format_tb(e.__traceback__)),
+            user_key=user_key,
+            channel_key=channel_key,
+        )
+        with self.session_mgr() as session:
+            session.add(err)

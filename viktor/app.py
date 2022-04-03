@@ -5,7 +5,6 @@ from datetime import (
     datetime,
     timedelta
 )
-from random import choice
 from flask import (
     Flask,
     request,
@@ -25,15 +24,8 @@ from easylogger import Log
 import viktor.bot_base as botbase
 from viktor.db_eng import ViktorPSQLClient
 from viktor.model import (
-    ChannelSettingType,
     TableEmoji,
-    TableQuote,
-    TableResponse,
-    TableChannelSetting,
-    TableSlackChannel,
-    TableSlackUser,
-    ResponseCategory,
-    ResponseType
+    TableQuote
 )
 from viktor.settings import auto_config
 from viktor.utils import collect_pins
@@ -44,7 +36,6 @@ logg = Log(bot_name, log_to_file=True)
 credstore = SecretStore('secretprops-davaiops.kdbx')
 # Set up database connection
 conn_dict = credstore.get_entry(f'davaidb-{auto_config.ENV.lower()}').custom_properties
-auto_config.start_engine(params_dict=conn_dict)
 vik_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Starting up app...')
@@ -53,18 +44,10 @@ logg.debug('Starting up app...')
 message_limits = {}  # date, count
 logg.debug('Building user list')
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = auto_config.DB_URI
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 eng = ViktorPSQLClient(props=conn_dict, parent_log=logg)
-# db = SQLAlchemy(app)
 
 logg.debug('Instantiating bot...')
 Bot = botbase.Viktor(parent_log=logg)
-with eng.session_mgr() as sess:
-    RESPONSES = sess.query(TableResponse.text).filter(and_(
-        TableResponse.type == ResponseType.GENERAL,
-        TableResponse.category == ResponseCategory.STANDARD
-    ))
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
@@ -108,7 +91,7 @@ def handle_action():
     # Respond to the initial message and update it
     update_dict = {
         'replace_original': True,
-        'text': choice(RESPONSES)
+        'text': 'boop beep boop'
     }
     if event_data.get('container', {'is_ephemeral': False}).get('is_ephemeral', False):
         update_dict['response_type'] = 'ephemeral'
@@ -156,7 +139,7 @@ def handle_cron_profile_update():
     # Check emojis uploaded (every 60 mins)
     # This url is hit in crontab as such:
     #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/reacts
-    # TODO: Methodolgy...
+    # TODO: Methodology...
     #   since Slack pushes a /user_change event for every minor change, we should wait before logging that change
     #   so what we'll do here is, every hour, compare what's in the users table against what's in the change log.
     #   We should also expect the situation that the user doesn't appear in the change log, and if that happens,
@@ -233,27 +216,19 @@ def reaction(event_data: dict):
         # Store new react event first
         logg.debug(f'Registering react in {channel}: {unique_event_key}')
         Bot.state_store['reacts'].add(unique_event_key)
+
+    channel_obj = eng.get_channel_from_hash(channel_hash=channel)
+
     with eng.session_mgr() as session:
         logg.debug('Counting react in db...')
         session.query(TableEmoji).filter(TableEmoji.name == reaction_emoji).update({
             'reaction_count': TableEmoji.reaction_count + 1
         })
         logg.debug('Determining if channel allows bot reactions')
-        # TODO: Make this a common method with channel hash as input
-        channel_allowed = session.query(TableChannelSetting).\
-            join(TableSlackChannel, TableSlackChannel.channel_id == TableChannelSetting.channel_key).\
-            filter(and_(
-                TableSlackChannel.slack_channel_hash == channel,
-                TableChannelSetting == ChannelSettingType.IS_ALLOWED_REACTION,
-            )).one_or_none()
-        if channel_allowed is not None and channel_allowed.setting_int == 0:
+        if channel_obj is not None and not channel_obj.is_allow_bot_react:
             logg.debug('Channel is denylisted for bot reactions. Do nothing...')
             # Channel doesn't allow reactions
             return make_response('', 200)
-    if channel in auto_config.DENY_LIST_CHANNELS:
-        # TODO: Migrate this to db...
-        logg.debug(f'Bypassing react in denylisted channel.')
-        return make_response('', 200)
     if user in [Bot.bot_id, Bot.user_id]:
         logg.debug('Bypassing bot react...')
         # Don't allow this infinite loop
@@ -266,7 +241,7 @@ def reaction(event_data: dict):
                 order_by(func.random()).limit(1).one()
             _ = Bot.st.bot.reactions_add(channel=channel, name=emoji.name, timestamp=msg_ts)
         return make_response('', 200)
-    except Exception as e:
+    except Exception as _:
         # Sometimes we'll get a 'too_many_reactions' error. Disregard in that case
         pass
 
@@ -345,38 +320,34 @@ def notify_new_statuses(event_data):
     user_info = event['user']
     uid = user_info['id']
     # Look up user in db
-    with eng.session_mgr() as session:
-        user = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == uid).one_or_none()
-        if user is not None:
-            session.expunge(user)
-        else:
-            logg.warning(f'Couldn\'t find user: {uid} \n {user_info}')
-            return
-    if user is not None:
-        # get display name
-        profile = user_info.get('profile')
-        display_name = profile.get('display_name')
-        real_name = profile.get('real_name')
-        status_emoji = profile.get('status_emoji', '')
-        status_text = profile.get('status_text', '')
-        avi_link = profile.get('image_512')
-        if any([
-            user.display_name != display_name,
-            user.real_name != real_name,
-            user.status_emoji != status_emoji,
-            user.status_text != status_text,
-            user.avatar_link != avi_link
-        ]):
-            # Update the user
-            with eng.session_mgr() as session:
-                session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == uid).update({
-                    'real_name': real_name,
-                    'display_name': display_name,
-                    'avatar_link': avi_link,
-                    'status_emoji': status_emoji,
-                    'status_text': status_text
-                })
-            logg.debug(f'User {display_name} updated in db.')
+    user_obj = eng.get_user_from_hash(user_hash=uid)
+    if user_obj is None:
+        logg.warning(f'Couldn\'t find user: {uid} \n {user_info}')
+        return
+
+    # get display name
+    profile = user_info.get('profile')
+    display_name = profile.get('display_name')
+    real_name = profile.get('real_name')
+    status_emoji = profile.get('status_emoji', '')
+    status_text = profile.get('status_text', '')
+    avi_link = profile.get('image_512')
+    if any([
+        user_obj.display_name != display_name,
+        user_obj.real_name != real_name,
+        user_obj.status_emoji != status_emoji,
+        user_obj.status_text != status_text,
+        user_obj.avatar_link != avi_link
+    ]):
+        # Update the user
+        with eng.session_mgr() as session:
+            session.refresh(user_obj)
+            user_obj.real_name = real_name
+            user_obj.display_name = display_name
+            user_obj.avatar_link = avi_link
+            user_obj.status_emoji = status_emoji
+            user_obj.status_title = status_text
+        logg.debug(f'User {display_name} updated in db.')
 
     # if uid in Bot.users_dict.keys():
     #     # Get what info we've already stored on the user

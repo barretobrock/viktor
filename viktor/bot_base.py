@@ -38,6 +38,7 @@ from viktor.phrases import (
 )
 from viktor.settings import auto_config
 from viktor.model import (
+    BotSettingType,
     ResponseType,
     ResponseCategory,
     TableEmoji,
@@ -347,6 +348,12 @@ class Viktor:
                 'cat': cat_useful,
                 'desc': 'Gets the etymology of a given word',
                 'response': [Linguistics.get_etymology, 'message', 'match_pattern']
+            },
+            r'^refresh xoxc\s': {
+                'pattern': 'refresh xoxc <xoxc-token>',
+                'cat': cat_useful,
+                'desc': 'Refresh the xoxc token for emojis',
+                'response': [self.refresh_xoxc, 'message', 'match_pattern']
             }
         }
 
@@ -360,7 +367,8 @@ class Viktor:
         self.bot = self.st.bot
         self.generate_intro()
 
-        self.st.message_test_channel(blocks=self.get_bootup_msg())
+        if vik_app.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_STARTUP):
+            self.st.message_test_channel(blocks=self.get_bootup_msg())
 
         # Place to temporarily store things. Typical structure is activity -> user -> data
         self.state_store = {
@@ -387,6 +395,11 @@ class Viktor:
         # Update the command dict in SlackBotBase
         self.st.update_commands(self.commands)
 
+    def refresh_xoxc(self, message: str, match_pattern: str):
+        xoxc = re.sub(match_pattern, '', message).strip()
+        self.st.refresh_xoxc_token(new_token=xoxc)
+        return 'done.'
+
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
         _ = args
@@ -395,7 +408,8 @@ class Viktor:
                 bkb.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
             ])
         ]
-        self.st.message_test_channel(blocks=notify_block)
+        if vik_app.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_SHUTDOWN):
+            self.st.message_test_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
         self.log.close()
         sys.exit(0)
@@ -428,7 +442,7 @@ class Viktor:
             self.new_role_form_p2(user=user, channel=channel, new_title=action_value)
         elif action_id == 'new-role-p2':
             # Update the description part of the role. Title should already be updated in p1
-            user_obj = self._get_user_obj(user)
+            user_obj = vik_app.eng.get_user_from_hash(user)
             if action_value != user_obj.role_desc:
                 with vik_app.eng.session_mgr() as session:
                     session.refresh(user_obj)
@@ -443,7 +457,7 @@ class Viktor:
                 self.state_store['new-ltit-req'].update(new_ltit_req)
             else:
                 self.state_store['new-ltit-req'] = new_ltit_req
-            tgt_user_obj = self._get_user_obj(action_dict.get('selected_user'))
+            tgt_user_obj = vik_app.eng.get_user_from_hash(action_dict.get('selected_user'))
             form_p2 = Forms.build_update_user_ltits_form_p2(tgt_user_obj.ltits)
             self.st.send_message(channel=channel, message='LTITs form p2', blocks=form_p2)
         elif action_id == 'ltits-user-p2':
@@ -920,9 +934,7 @@ class Viktor:
     def show_my_perks(self, user: str) -> Union[List[Dict], str]:
         """Lists the perks granted at the user's current level"""
         # Get the user's level
-        with vik_app.eng.session_mgr() as session:
-            user_obj = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == user).one_or_none()
-            session.expunge(user_obj)
+        user_obj = vik_app.eng.get_user_from_hash(user_hash=user)
         if user_obj is None:
             return 'User not found in OKR roles sheet :frowning:'
 
@@ -944,17 +956,10 @@ class Viktor:
             bkb.make_block_section(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
         ]
 
-    @staticmethod
-    def _get_user_obj(user: str) -> TableSlackUser:
-        with vik_app.eng.session_mgr() as session:
-            user_obj = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == user).one_or_none()
-            session.expunge(user_obj)
-        return user_obj
-
     def new_role_form_p1(self, user: str, channel: str):
         """Builds form to intake emoji and upload"""
         # Load user
-        user_obj = self._get_user_obj(user)
+        user_obj = vik_app.eng.get_user_from_hash(user)
         form1 = Forms.build_role_input_form_p1(existing_title=user_obj.role_title)
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p1',
                                             blocks=form1)
@@ -962,7 +967,7 @@ class Viktor:
     def new_role_form_p2(self, user: str, channel: str, new_title: str):
         """Part 2 of new role intake"""
         # Load user
-        user_obj = self._get_user_obj(user)
+        user_obj = vik_app.eng.get_user_from_hash(user)
         if new_title != user_obj.role_title:
             with vik_app.eng.session_mgr() as session:
                 session.refresh(user_obj)
@@ -981,7 +986,7 @@ class Viktor:
             # Some people should stay permanently at lvl 1
             return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
 
-        user_obj = self._get_user_obj(target_user)
+        user_obj = vik_app.eng.get_user_from_hash(target_user)
         if user_obj is None:
             return f'user <@{target_user}> not found in HR records... :nervous_peach:'
         with vik_app.eng.session_mgr() as session:
@@ -996,7 +1001,7 @@ class Viktor:
         if requesting_user not in self.approved_users:
             return 'LOL sorry, LTIT distributions are SLT-approved only'
 
-        user_obj = self._get_user_obj(target_user)
+        user_obj = vik_app.eng.get_user_from_hash(target_user)
         if user_obj is None:
             return f'user <@{target_user}> not found in HR records... :nervous_peach:'
         with vik_app.eng.session_mgr() as session:
@@ -1037,12 +1042,9 @@ class Viktor:
             roles_output += [bkb.make_block_section([build_employee_info(emp=u)]) for u in users]
         else:
             # Printing role for an individual user
-            with vik_app.eng.session_mgr() as session:
-                user_obj = session.query(TableSlackUser).filter(
-                    TableSlackUser.slack_user_hash == user).one_or_none()
-                if user_obj is None:
-                    return f'user <@{user}> not found in HR records... :nervous_peach:'
-                session.expunge(user_obj)
+            user_obj = vik_app.eng.get_user_from_hash(user_hash=user)
+            if user_obj is None:
+                return f'user <@{user}> not found in HR records... :nervous_peach:'
             roles_output.append(bkb.make_block_section([build_employee_info(emp=user_obj)]))
 
         return roles_output

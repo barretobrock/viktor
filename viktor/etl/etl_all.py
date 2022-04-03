@@ -19,7 +19,6 @@ from viktor.model import (
     ResponseType,
     TableAcronym,
     TableBotSetting,
-    TableChannelSetting,
     TableEmoji,
     TableError,
     TablePerk,
@@ -40,7 +39,6 @@ class ETL:
     ALL_TABLES = [
         TableAcronym,
         TableBotSetting,
-        TableChannelSetting,
         TableEmoji,
         TableError,
         TablePerk,
@@ -51,6 +49,14 @@ class ETL:
         TableSlackUserChangeLog,
         TableUwu
     ]
+
+    TEST_CHANNEL = 'CM376Q90F'
+    EMOJI_CHANNEL = 'CLWCPQ2TV'
+    GENERAL_CHANNEL = 'CMEND3W3H'
+    IMPO_CHANNEL = 'CNPADBLBF'
+    CAH_CHANNEL = 'CMPV3K8AE'
+    # Prevent automated activity from occurring in these channels
+    DENY_LIST_CHANNELS = [IMPO_CHANNEL, CAH_CHANNEL]
 
     def __init__(self, tables: List = None, env: str = 'dev'):
         self.log = Log('vik-etl', log_level_str='DEBUG', log_to_file=True)
@@ -123,7 +129,7 @@ class ETL:
     def etl_okr_users(self):
         # Users
         self.log.debug('Working on OKR users...')
-        users = self.st.get_channel_members(channel=auto_config.GENERAL_CHANNEL, humans_only=False)
+        users = self.st.get_channel_members(channel=self.GENERAL_CHANNEL, humans_only=False)
         roles = self.gsr.get_sheet('okr_roles')
         usr_tbls = []
         for user in users:
@@ -253,11 +259,15 @@ class ETL:
         channels = []
         channels_resp = self.st.bot.conversations_list(limit=1000, types='public_channel,private_channel')
         for ch in channels_resp.get('channels'):
-
-            if not ch['is_channel'] or ch['name'].startswith('shitpost'):
+            ch_name = ch['name']
+            ch_id = ch['id']
+            if not ch['is_channel'] or ch_name.startswith('shitpost'):
                 continue
-            self.log.debug(f'Adding {ch["name"]}')
-            channels.append(TableSlackChannel(slack_channel_hash=ch['id'], channel_name=ch['name'],
+            self.log.debug(f'Adding {ch_name}')
+            channels.append(TableSlackChannel(slack_channel_hash=ch_id, channel_name=ch_name,
+                                              is_allow_bot_react=ch_id not in self.DENY_LIST_CHANNELS,
+                                              is_allow_bot_response=ch_id not in self.DENY_LIST_CHANNELS,
+                                              is_archived=ch['is_archived'],
                                               is_private=ch['is_private']))
         with self.psql_client.session_mgr() as session:
             self.log.debug(f'Adding {len(channels)} channels...')
