@@ -61,7 +61,7 @@ class ETL:
     def __init__(self, tables: List = None, env: str = 'dev'):
         self.log = Log('vik-etl', log_level_str='DEBUG', log_to_file=True)
         self.log.debug('Optaining credential file...')
-        credstore = SecretStore('secretprops-bobdev.kdbx')
+        credstore = SecretStore('secretprops-davaiops.kdbx')
 
         self.log.debug('Opening up the database...')
         db_props = credstore.get_entry(f'davaidb-{env}').custom_properties
@@ -314,7 +314,7 @@ class ETL:
 
 if __name__ == '__main__':
     from viktor.model import TableResponse
-    etl = ETL(tables=ETL.ALL_TABLES, env='dev')
+    etl = ETL(tables=ETL.ALL_TABLES, env='prod')
     etl.etl_acronyms()
     etl.etl_emojis()
     etl.etl_okr_perks()

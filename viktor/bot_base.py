@@ -372,7 +372,9 @@ class Viktor:
 
         # Place to temporarily store things. Typical structure is activity -> user -> data
         self.state_store = {
-            'reacts': set()
+            'reacts': set(),
+            'new-emoji': {},
+            'new-ltit-req': {}
         }
 
         self.log.debug(f'{self.bot_name} booted up!')

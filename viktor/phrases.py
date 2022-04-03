@@ -1,7 +1,10 @@
 import re
 import requests
 import string
-from random import randint
+from random import (
+    randint,
+    choice
+)
 from typing import (
     List,
     Optional,
@@ -50,7 +53,9 @@ class PhraseBuilders:
         'you': ['me', 'myself'],
         'she': ['her', 'she'],
         'he': ['him', 'he'],
+        'ze': ['zir', 'hir'],
         'it': ['it'],
+        'we': ['we', 'us'],
         'they': ['them', 'they']
     }
 
@@ -125,12 +130,11 @@ class PhraseBuilders:
     def _phrase_builder(word_dict: Dict[int, List[str]]) -> List[str]:
         """Randomly assembles phrases together from a collection of columns in a dataframe"""
         phrase_list = []
-        for k, v in word_dict.items():
-            if len(v) > 1:
-                txt = v[randint(0, len(v) - 1)]
-            else:
-                txt = v[0]
-            phrase_list.append(txt.strip())
+        # Get the max key (it should be a number)
+        max_key = max(word_dict.keys())
+        for i in range(1, max_key + 1):
+            txt = choice(word_dict[i]).strip()
+            phrase_list.append(txt)
         return phrase_list
 
     @classmethod
@@ -251,10 +255,34 @@ class PhraseBuilders:
             word_lists.append(cls._phrase_builder(word_dict=word_dict))
         # Build the phrases
         if cmd == 'insult':
+            insult_head = [
+                'aint nothin but a',
+                'is a',
+                'got a',
+                'got that',
+                'you\re a'
+            ]
+            insult_tail = [
+                ' lol!!!!',
+                '!!!!!',
+                '.',
+                '!',
+                ' ayyyy!!'
+            ]
             if target in sum(cls.pronoun_direction.values(), []):
                 # Using pronouns. Try to be smart about this!
-                target = next(iter([k for k, v in cls.pronoun_direction.items() if target in v]))
-            txt = f"{target.title()} aint nothin but a {' and a '.join([' '.join(x) for x in word_lists])}."
+                new_target = []
+                for word in target.split(' '):
+                    if word in sum(cls.pronoun_direction.values(), []):
+                        word = next(iter([k for k, v in cls.pronoun_direction.items() if word in v]))
+                    new_target.append(word)
+                target = ' '.join(new_target).capitalize()
+            elif '@' in target:
+                target = f'<{target}>'
+            else:
+                target = target.capitalize()
+            txt = f"{target} {choice(insult_head)} {' and a '.join([' '.join(x) for x in word_lists])}" \
+                  f"{choice(insult_tail)}"
         elif cmd == 'phrase':
             if category == ResponseCategory.STANDARD:
                 processed = []
