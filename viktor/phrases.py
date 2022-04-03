@@ -278,7 +278,7 @@ class PhraseBuilders:
                     new_target.append(word)
                 target = ' '.join(new_target).capitalize()
             elif '@' in target:
-                target = f'<{target}>'
+                target = f'<{target.upper()}>'
             else:
                 target = target.capitalize()
             txt = f"{target} {choice(insult_head)} {' and a '.join([' '.join(x) for x in word_lists])}" \
