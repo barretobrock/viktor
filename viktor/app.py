@@ -382,7 +382,7 @@ def notify_new_statuses(event_data):
     ]):
         # Update the user
         with eng.session_mgr() as session:
-            session.refresh(user_obj)
+            session.add(user_obj)
             user_obj.real_name = real_name
             user_obj.display_name = display_name
             user_obj.avatar_link = avi_link

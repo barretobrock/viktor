@@ -447,7 +447,7 @@ class Viktor:
             user_obj = vik_app.eng.get_user_from_hash(user)
             if action_value != user_obj.role_desc:
                 with vik_app.eng.session_mgr() as session:
-                    session.refresh(user_obj)
+                    session.add(user_obj)
                     user_obj.role_desc = action_value
             self.build_role_txt(channel=channel, user=user)
         elif action_id == 'levelup-user':
@@ -972,7 +972,7 @@ class Viktor:
         user_obj = vik_app.eng.get_user_from_hash(user)
         if new_title != user_obj.role_title:
             with vik_app.eng.session_mgr() as session:
-                session.refresh(user_obj)
+                session.add(user_obj)
                 user_obj.role_title = new_title
         form2 = Forms.build_role_input_form_p2(title=new_title, existing_desc=user_obj.role_desc)
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p2',
@@ -992,7 +992,7 @@ class Viktor:
         if user_obj is None:
             return f'user <@{target_user}> not found in HR records... :nervous_peach:'
         with vik_app.eng.session_mgr() as session:
-            session.refresh(user_obj)
+            session.add(user_obj)
             user_obj.level += 1
         self.st.send_message(channel, f'Level for *`{user_obj.name}`* updated to *`{user_obj.level}`*.')
 
@@ -1007,7 +1007,7 @@ class Viktor:
         if user_obj is None:
             return f'user <@{target_user}> not found in HR records... :nervous_peach:'
         with vik_app.eng.session_mgr() as session:
-            session.refresh(user_obj)
+            session.add(user_obj)
             user_obj.ltits += ltits
         self.st.send_message(
             channel, f'LTITs for  *`{user_obj.name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.')
