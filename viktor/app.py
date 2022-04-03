@@ -205,8 +205,8 @@ def handle_cron_profile_update():
             blocks.append([
                 bkb.make_context_section(attr.title()),
                 bkb.make_block_section(
-                    f"NEW:\n\t{updated_user.get('attr').get('new')}\n\n"
-                    f"OLD:\n\t{updated_user.get('attr').get('old')}"),
+                    f"NEW:\n\t{updated_user.get(attr).get('new')}\n\n"
+                    f"OLD:\n\t{updated_user.get(attr).get('old')}"),
                 bkb.make_block_divider()
             ])
         Bot.st.send_message(channel=Bot.general_channel, message='user profile update!', blocks=blocks)
@@ -371,7 +371,7 @@ def notify_new_statuses(event_data):
     display_name = profile.get('display_name')
     real_name = profile.get('real_name')
     status_emoji = profile.get('status_emoji', '')
-    status_title = profile.get('status_title', '')
+    status_title = profile.get('status_text', '')
     avi_link = profile.get('image_512')
     if any([
         user_obj.display_name != display_name,
