@@ -64,18 +64,18 @@ class TableSlackUserChangeLog(Base):
     real_name = Column(VARCHAR(120))
     display_name = Column(VARCHAR(120))
     status_emoji = Column(VARCHAR(150))
-    status_text = Column(VARCHAR(255))
+    status_title = Column(VARCHAR(255))
     role_title = Column(TEXT)
     role_desc = Column(TEXT)
     avatar_link = Column(VARCHAR(255))
 
-    def __init__(self, real_name: str = None, display_name: str = None, status_text: str = None,
+    def __init__(self, real_name: str = None, display_name: str = None, status_title: str = None,
                  status_emoji: str = None, role_title: str = None,
                  role_desc: str = None, avatar_link: str = None, **kwargs):
         self.real_name = real_name
         self.display_name = display_name
         self.status_emoji = status_emoji
-        self.status_text = status_text
+        self.status_title = status_title
         self.role_title = role_title
         self.role_desc = role_desc
         self.avatar_link = avatar_link
@@ -85,4 +85,4 @@ class TableSlackUserChangeLog(Base):
 
     def __repr__(self) -> str:
         return f'<TableSlackUserChangeLog(name={self.real_name}, display_name={self.display_name}, ' \
-               f'status={self.status_text[:20]})>'
+               f'status={self.status_title[:20]})>'

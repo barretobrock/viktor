@@ -255,12 +255,13 @@ class PhraseBuilders:
             word_lists.append(cls._phrase_builder(word_dict=word_dict))
         # Build the phrases
         if cmd == 'insult':
+
             insult_head = [
                 'aint nothin but a',
                 'is a',
                 'got a',
                 'got that',
-                'you\re a'
+                'you\'re a'
             ]
             insult_tail = [
                 ' lol!!!!',
@@ -278,7 +279,7 @@ class PhraseBuilders:
                     new_target.append(word)
                 target = ' '.join(new_target).capitalize()
             elif '@' in target:
-                target = f'<{target.upper()}>'
+                target = f'{target.upper()}'
             else:
                 target = target.capitalize()
             txt = f"{target} {choice(insult_head)} {' and a '.join([' '.join(x) for x in word_lists])}" \
