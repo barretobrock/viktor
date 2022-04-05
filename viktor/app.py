@@ -247,7 +247,7 @@ def reaction(event_data: dict):
     react_ts = event.get('event_ts')
     # This is the timestamp of the message
     msg_ts = item.get('ts')
-    unique_event_key = f'{channel}|{react_ts}'
+    unique_event_key = f'{channel}|{user}|{msg_ts}|{datetime.now():%F %H}'
     if unique_event_key in Bot.state_store['reacts']:
         # Event's already been processed
         logg.debug(f'Bypassing react to preexisting event key: {unique_event_key}')
