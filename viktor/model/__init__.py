@@ -4,7 +4,10 @@ from .acronym import (
 )
 from .base import Base
 from .channel import TableSlackChannel
-from .emoji import TableEmoji
+from .emoji import (
+    TableEmoji,
+    TablePotentialEmoji
+)
 from .error import (
     ErrorType,
     TableError
