@@ -23,6 +23,9 @@ cd viktor && sh update_script.sh
 
 # Add service file to system
 sudo cp viktor.service /lib/systemd/system/
+sudo chmod 644 /lib/systemd/system/cah.service
+sudo systemctl daemon-reload
+sudo systemctl enable cah.service
 ```
 
 ## Upgrade
@@ -46,25 +49,43 @@ Then in another window, run the script to get the bot/app running. Don't forget 
 
 ## App Info
 
-### Scopes
-#### Bot
- - channels.history
- - channels.read
- - chat.write
- - emoji.read
- - files.write
- - groups.history
- - groups.read
- - im.history
- - im.read
- - im.write
- - mpim.read
- - reactions.read
- - reactions.write
- - users.read
-#### User
- - search.read
+### Permissions
+#### Events
+ - Bot
+   - emoji_changed
+   - message.channels
+   - message.groups
+   - message.im
+   - pin_added
+   - pin_removed
+   - reaction_added
+   - user_change
+ - User
+   - None, ATM
+#### OAuth Scopes
+ - Bot
+   - channels.history
+   - *channels.join
+   - channels.read
+   - chat.write
+   - commands (slash)
+   - emoji.read
+   - files.write
+   - groups.history
+   - groups.read
+   - im.history
+   - im.read
+   - im.write
+   - *incoming-webhook (CURL-based notifications)
+   - mpim.read
+   - pins.read
+   - reactions.read
+   - reactions.write
+   - users.read
+ - User
+   - search.read
 
+ .* = Not necessary for the primary functions of the service.
 
 
 

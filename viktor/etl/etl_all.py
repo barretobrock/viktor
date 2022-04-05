@@ -22,6 +22,7 @@ from viktor.model import (
     TableEmoji,
     TableError,
     TablePerk,
+    TablePotentialEmoji,
     TableQuote,
     TableResponse,
     TableSlackChannel,
@@ -42,6 +43,7 @@ class ETL:
         TableEmoji,
         TableError,
         TablePerk,
+        TablePotentialEmoji,
         TableQuote,
         TableResponse,
         TableSlackChannel,
@@ -58,7 +60,7 @@ class ETL:
     # Prevent automated activity from occurring in these channels
     DENY_LIST_CHANNELS = [IMPO_CHANNEL, CAH_CHANNEL]
 
-    def __init__(self, tables: List = None, env: str = 'dev'):
+    def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True):
         self.log = Log('vik-etl', log_level_str='DEBUG', log_to_file=True)
         self.log.debug('Optaining credential file...')
         credstore = SecretStore('secretprops-davaiops.kdbx')
@@ -68,13 +70,16 @@ class ETL:
         self.psql_client = ViktorPSQLClient(props=db_props, parent_log=self.log)
 
         # Determine tables to drop
-        self.log.debug(f'Dropping tables: {tables} from db...')
+        self.log.debug(f'Working on tables: {tables} from db...')
         tbl_objs = []
         for table in tables:
             tbl_objs.append(
                 Base.metadata.tables.get(f'{table.__table_args__.get("schema")}.{table.__tablename__}'))
-        Base.metadata.drop_all(self.psql_client.engine, tables=tbl_objs)
-        self.log.debug('Establishing database...')
+        if drop_all:
+            # We're likely doing a refresh - drop/create operations will be for all object
+            self.log.debug(f'Dropping {len(tbl_objs)} listed tables...')
+            Base.metadata.drop_all(self.psql_client.engine, tables=tbl_objs)
+        self.log.debug(f'Creating {len(tbl_objs)} listed tables...')
         Base.metadata.create_all(self.psql_client.engine, tables=tbl_objs)
 
         self.log.debug('Authenticating credentials for services...')
@@ -314,12 +319,13 @@ class ETL:
 
 if __name__ == '__main__':
     from viktor.model import TableResponse
-    etl = ETL(tables=ETL.ALL_TABLES, env='prod')
-    etl.etl_acronyms()
-    etl.etl_emojis()
-    etl.etl_okr_perks()
-    etl.etl_okr_users()
-    etl.etl_slack_channels()
-    etl.etl_quotes()
-    etl.etl_responses()
-    etl.etl_bot_settings()
+    # etl = ETL(tables=ETL.ALL_TABLES, env='dev')
+    # etl.etl_acronyms()
+    # etl.etl_emojis()
+    # etl.etl_okr_perks()
+    # etl.etl_okr_users()
+    # etl.etl_slack_channels()
+    # etl.etl_quotes()
+    # etl.etl_responses()
+    # etl.etl_bot_settings()
+    etl = ETL(tables=[TablePotentialEmoji], env='dev')
