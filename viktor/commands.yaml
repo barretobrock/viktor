@@ -104,7 +104,7 @@ commands:
             desc: Prints the current WFH epoch time
             response-cmd:
                 callable: wfh_epoch
-    groups-okr:
+    group-okr:
         ^onbo[a]?r[d]?ing$:
             tags:
                 - okr
@@ -179,7 +179,7 @@ commands:
                 args:
                     - channel
                     - user
-    groups-linguistics:
+    group-linguistics:
         ^e[nt]\s+:
             tags:
                 - linguistics
@@ -216,7 +216,7 @@ commands:
                 args:
                     - message
                     - match_pattern
-    groups-random:
+    group-random:
         ^access:
             tags:
                 - random
@@ -319,8 +319,8 @@ commands:
                 - tow
             desc: Guess what an acryonym might mean!
             flags:
-                - g|group <acronym-group>
-                - n <n-times>
+                - -(g|group) <acronym-group>
+                - -n <n-times>
             response-cmd:
                 callable: guess_acronym
                 args:
@@ -330,7 +330,7 @@ commands:
                 - random
             desc: Generates an insult.
             flags:
-                - g|group <insult-group>
+                - -(g|group) <insult-group>
             response-cmd:
                 callable: insult
                 args:
@@ -340,8 +340,8 @@ commands:
                 - random
             desc: Generates a phrase from an ordered collection of words.
             flags:
-                - g|group <phrase-group>
-                - n <n-times>
+                - -(g|group) <phrase-group>
+                - -n <n-times>
             response-cmd:
                 callable: phrase_generator
                 args:
@@ -351,7 +351,7 @@ commands:
                 - random
             desc: Generates a :q:compliment:q:.
             flags:
-                - g|group <compliment-group>
+                - -(g|group) <compliment-group>
             response-cmd:
                 callable: compliment
                 args:

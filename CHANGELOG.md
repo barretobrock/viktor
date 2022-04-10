@@ -15,6 +15,13 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.3] - 2022-04-10
+#### Changed
+ - optional flags documentation now have a bit clearer syntax 
+#### Fixed
+ - group names in command YAML now match expected pattern
+#### Security
+ 
 ### [1.6.2] - 2022-04-10
 #### Fixed
  - Forgot to patch commands in to `SlackBotBase`, which is where the task delegation occurs. Without this, viktor wasn't handling any command
