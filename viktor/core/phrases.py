@@ -16,8 +16,8 @@ from sqlalchemy.sql import (
     func,
     and_
 )
-from slacktools import BlockKitBuilder as bkb
-import viktor.app as vik_app
+from slacktools import BlockKitBuilder as BKitB
+from slacktools.slack_input_parser import SlackInputParser
 from viktor.model import (
     AcronymType,
     ResponseCategory,
@@ -26,6 +26,7 @@ from viktor.model import (
     TableResponse,
     TableUwu
 )
+from viktor.db_eng import ViktorPSQLClient
 
 
 TEXT_KEYS = ['text']
@@ -59,8 +60,10 @@ class PhraseBuilders:
         'they': ['them', 'they']
     }
 
-    @staticmethod
-    def uwu(msg: str) -> str:
+    def __init__(self, eng: ViktorPSQLClient):
+        self.eng = eng
+
+    def uwu(self, msg: str) -> str:
         """uwu-fy a message"""
         default_lvl = 2
 
@@ -72,7 +75,7 @@ class PhraseBuilders:
             level = default_lvl
             text = msg.replace('uwu', '').strip()
 
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             # Randomly select 2 graphics
             chars = [x.graphic for x in session.query(TableUwu.graphic).order_by(func.random()).limit(2).all()]
             prefix, suffix = chars
@@ -137,35 +140,34 @@ class PhraseBuilders:
             phrase_list.append(txt)
         return phrase_list
 
-    @classmethod
-    def _get_target(cls, message: str, cmd_base: str) -> str:
+    @staticmethod
+    def _get_target(message: str, cmd_base: str) -> str:
         """Parses out the target of the command
 
         Examples:
-            >>> cls._get_target("insult me -g standard", "insult")
+            _get_target("insult me -g standard", "insult")
             >>> "me"
-            >>> cls._get_target("compliment that person on the street -g standard", "compliment")
+            _get_target("compliment that person on the street -g standard", "compliment")
             >>> "that person on the street"
         """
-        return vik_app.Bot.st.parse_flags_from_command(message)['cmd'].replace(cmd_base, '').strip()
+        return SlackInputParser.parse_flags_from_command(message=message)['cmd'].replace(cmd_base, '').strip()
 
     @classmethod
     def _message_extractor(cls, message, cmd: str, default_group: str) -> Tuple[str, int, Optional[str]]:
         """extracts valuable info from message"""
         # Parse the group of phrases the user wants to work with
-        phrase_group = vik_app.Bot.st.get_flag_from_command(message, flags=['group', 'g'], default=default_group)
+        phrase_group = SlackInputParser.get_flag_from_command(message, flags=['group', 'g'], default=default_group)
         # Number of times to cycle through phrase generation
-        n_times = vik_app.Bot.st.get_flag_from_command(message, flags=['n'], default='1')
+        n_times = SlackInputParser.get_flag_from_command(message, flags=['n'], default='1')
         n_times = int(n_times) if n_times.isnumeric() else 1
         # Capture a possible target (not always used though)
         target = cls._get_target(message, cmd)
         return phrase_group, n_times, target
 
-    @staticmethod
-    def _get_random_response(resp_type: ResponseType, category: ResponseCategory) -> str:
+    def _get_random_response(self, resp_type: ResponseType, category: ResponseCategory) -> str:
         """Retrieves a random response from the provided type/category combo. If no combo exists,
             will instead return a string saying that the pairing was not found"""
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             resp = session.query(TableResponse.text).filter(and_(
                 TableResponse.type == resp_type,
                 TableResponse.category == category
@@ -174,16 +176,13 @@ class PhraseBuilders:
                 return f'Cannot find combo in table: {resp_type.name} + {category.name}'
             return resp.text
 
-    @classmethod
-    def sh_response(cls) -> str:
-        return cls._get_random_response(ResponseType.GENERAL, category=ResponseCategory.STAKEHOLDER)
+    def sh_response(self) -> str:
+        return self._get_random_response(ResponseType.GENERAL, category=ResponseCategory.STAKEHOLDER)
 
-    @classmethod
-    def jackhandey(cls) -> str:
-        return cls._get_random_response(ResponseType.GENERAL, category=ResponseCategory.JACKHANDEY)
+    def jackhandey(self) -> str:
+        return self._get_random_response(ResponseType.GENERAL, category=ResponseCategory.JACKHANDEY)
 
-    @classmethod
-    def guess_acronym(cls, message: str) -> str:
+    def guess_acronym(self, message: str) -> str:
         """Tries to guess an acronym from a message"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -194,13 +193,14 @@ class PhraseBuilders:
         acronym = re.sub(r'\W', '', acronym)
 
         # Parse the group of acronyms the user wants to work with
-        acronym_group_str = vik_app.Bot.st.get_flag_from_command(message, flags=['group', 'g'], default='standard')
+        acronym_group_str = SlackInputParser.get_flag_from_command(message, flags=['group', 'g'],
+                                                                   default='standard')
         acronym_group = getattr(AcronymType, acronym_group_str.upper(), AcronymType.STANDARD)
         # Number of guesses to make
-        n_times = vik_app.Bot.st.get_flag_from_command(message, flags=['n'], default='3')
+        n_times = SlackInputParser.get_flag_from_command(message, flags=['n'], default='3')
         n_times = int(n_times) if n_times.isnumeric() else 3
         # Select the acronym list to use, verify that we have some words in that group
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             words = [x.text for x in session.query(TableAcronym).filter(TableAcronym.type == acronym_group).all()]
 
         if len(words) == 0:
@@ -229,15 +229,14 @@ class PhraseBuilders:
         guess_chunk = "\n_OR_\n".join(guesses)
         return f':robot-face: Here are my guesses for *`{acronym.upper()}`*!\n {guess_chunk}'
 
-    @classmethod
-    def _process_cmd_and_generate_response(cls, cmd: str, message: str, user: str = None) -> str:
-        """Handles processing the insult, compliement, phrase command and generating an appropriate response"""
+    def _process_cmd_and_generate_response(self, cmd: str, message: str, user: str = None) -> str:
+        """Handles processing the insult, compliment, phrase command and generating an appropriate response"""
         # Extract commands and other info from the message
-        category_str, n_times, target = cls._message_extractor(message=message, cmd=cmd, default_group='standard')
+        category_str, n_times, target = self._message_extractor(message=message, cmd=cmd, default_group='standard')
         # Attempt to find the
         category = getattr(ResponseCategory, category_str.upper(), ResponseCategory.STANDARD)
         # Extract all related words from db
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             words = session.query(TableResponse).filter(and_(
                 TableResponse.type == ResponseType[cmd.upper()],
                 TableResponse.category == category
@@ -248,11 +247,11 @@ class PhraseBuilders:
             return f'Unable to find a(n) {cmd} group for {category_str}'
         # Organize the words by stage
         # Build a dictionary of the query results, organized by stage
-        word_dict = cls._word_result_organiser(word_results=words)
+        word_dict = self._word_result_organiser(word_results=words)
         # Use the word dict to randomly select words from each stage
         word_lists = []  # type: List[List[str]]
         for i in range(n_times):
-            word_lists.append(cls._phrase_builder(word_dict=word_dict))
+            word_lists.append(self._phrase_builder(word_dict=word_dict))
         # Build the phrases
         if cmd == 'insult':
 
@@ -270,12 +269,12 @@ class PhraseBuilders:
                 '!',
                 ' ayyyy!!'
             ]
-            if target in sum(cls.pronoun_direction.values(), []):
+            if target in sum(self.pronoun_direction.values(), []):
                 # Using pronouns. Try to be smart about this!
                 new_target = []
                 for word in target.split(' '):
-                    if word in sum(cls.pronoun_direction.values(), []):
-                        word = next(iter([k for k, v in cls.pronoun_direction.items() if word in v]))
+                    if word in sum(self.pronoun_direction.values(), []):
+                        word = next(iter([k for k, v in self.pronoun_direction.items() if word in v]))
                     new_target.append(word)
                 target = ' '.join(new_target).capitalize()
             elif '@' in target:
@@ -294,7 +293,7 @@ class PhraseBuilders:
                 processed = [' '.join(x) for x in word_lists]
             txt = '. '.join([x.strip().capitalize() for x in f'{" ".join(processed)}'.split('.')])
         elif cmd == 'compliment':
-            if target in sum(cls.pronoun_direction.values(), []):
+            if target in sum(self.pronoun_direction.values(), []):
                 # Maybe we'll circle back here later and use a smarter way of dealing with pronouns
                 txt = f"Dear Asshole, {' and '.join([' '.join(x) for x in word_lists])} Viktor."
             else:
@@ -303,31 +302,28 @@ class PhraseBuilders:
             txt = 'boop......booop.........................boooooooooop    :party-dead:'
         return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', txt)
 
-    @classmethod
-    def insult(cls, message: str) -> str:
+    def insult(self, message: str) -> str:
         """Insults the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
             return "I can't work like this! I need something to insult!!:ragetype:"
         if all([x in message.lower() for x in ['me', 'hard']]):
             # Generate better insult
-            return cls.get_evil_insult()
+            return self.get_evil_insult()
 
-        return cls._process_cmd_and_generate_response(cmd='insult', message=message)
+        return self._process_cmd_and_generate_response(cmd='insult', message=message)
 
-    @classmethod
-    def phrase_generator(cls, message: str) -> str:
+    def phrase_generator(self, message: str) -> str:
         """Generates a phrase based on a table of work fragments"""
-        return cls._process_cmd_and_generate_response(cmd='phrase', message=message)
+        return self._process_cmd_and_generate_response(cmd='phrase', message=message)
 
-    @classmethod
-    def compliment(cls, message: str, user: str) -> str:
+    def compliment(self, message: str, user: str) -> str:
         """Compliments the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
             return "I can't work like this! I need a target to compliment!!:ragetype:"
 
-        return cls._process_cmd_and_generate_response(cmd='compliment', message=message, user=user)
+        return self._process_cmd_and_generate_response(cmd='compliment', message=message, user=user)
 
     @staticmethod
     def get_evil_insult() -> Optional[str]:
@@ -335,11 +331,10 @@ class PhraseBuilders:
         if resp.status_code == 200:
             return resp.json().get('insult')
 
-    @classmethod
-    def facts(cls, category: ResponseCategory = ResponseCategory.STANDARD) -> Union[str, List[Dict]]:
+    def facts(self, category: ResponseCategory = ResponseCategory.STANDARD) -> Union[str, List[Dict]]:
         """Gives the user a random fact at their request"""
         # Extract all related words from db
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             randfact = session.query(TableResponse).filter(and_(
                 TableResponse.type == ResponseType.FACT,
                 TableResponse.category == category
@@ -353,16 +348,18 @@ class PhraseBuilders:
         fact_header = f'{"Official" if category == ResponseCategory.STANDARD else "Conspiracy"} fact #{rf_id}'
 
         return [
-            bkb.make_header(fact_header),
-            bkb.make_block_section(randfact.text)
+            BKitB.make_header(fact_header),
+            BKitB.make_block_section(randfact.text)
         ]
 
-    @staticmethod
-    def affirmation() -> str:
+    def conspiracy_fact(self) -> Union[str, List[Dict]]:
+        return self.facts(category=ResponseCategory.FOILHAT)
+
+    def affirmation(self) -> str:
         resp = requests.get('https://www.affirmations.dev/')
         if resp.status_code == 200:
             # Get an uwu graphic
-            with vik_app.eng.session_mgr() as session:
+            with self.eng.session_mgr() as session:
                 header, footer = [x.graphic for x in session.query(TableUwu.graphic)
                                   .order_by(func.random()).limit(2).all()]
             aff_txt = resp.json().get('affirmation')

@@ -1,5 +1,8 @@
 import os
-from .config import Development, Production
+from .config import (
+    Development,
+    Production
+)
 
 config_space = os.getenv('VIKTOR_ENV', 'DEVELOPMENT')
 if config_space == 'DEVELOPMENT':

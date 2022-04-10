@@ -18,10 +18,8 @@ from sqlalchemy.sql import (
 from slackeventsapi import SlackEventAdapter
 from slacktools import (
     SecretStore,
-    BlockKitBuilder as bkb
+    BlockKitBuilder as BKitB
 )
-from easylogger import Log
-import viktor.bot_base as botbase
 from viktor.db_eng import ViktorPSQLClient
 from viktor.model import (
     TableEmoji,
@@ -30,10 +28,12 @@ from viktor.model import (
     TableQuote
 )
 from viktor.settings import auto_config
-from viktor.utils import collect_pins
+from viktor.core.pin_collector import collect_pins
+from viktor.logg import get_base_logger
+from viktor.bot_base import Viktor
 
 bot_name = auto_config.BOT_NICKNAME
-logg = Log(bot_name, log_to_file=True)
+logg = get_base_logger()
 
 credstore = SecretStore('secretprops-davaiops.kdbx')
 # Set up database connection
@@ -41,15 +41,11 @@ conn_dict = credstore.get_entry(f'davaidb-{auto_config.ENV.lower()}').custom_pro
 vik_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Starting up app...')
-# Include a means of halting duplicate requests from being handled
-#   until I can figure out a better async protocol
-message_limits = {}  # date, count
-logg.debug('Building user list')
 app = Flask(__name__)
 eng = ViktorPSQLClient(props=conn_dict, parent_log=logg)
 
 logg.debug('Instantiating bot...')
-Bot = botbase.Viktor(parent_log=logg)
+Bot = Viktor(eng=eng, bot_cred_entry=vik_creds, parent_log=logg)
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
@@ -128,8 +124,8 @@ def handle_cron_new_emojis():
         for i in range(0, len(emojis), 10):
             emoji_str += f"{''.join(emojis[i:i + 10])}\n"
         msg_block = [
-            bkb.make_context_section([
-                bkb.markdown_section('Incoming emojis that were added in the last 60 min!')
+            BKitB.make_context_section([
+                BKitB.markdown_section('Incoming emojis that were added in the last 60 min!')
             ]),
         ]
         Bot.st.send_message(Bot.emoji_channel, 'new emoji report', blocks=msg_block)
@@ -196,18 +192,19 @@ def handle_cron_profile_update():
     # Now work on splitting the new/old info into a message
     for updated_user in updated_users:
         blocks = [
-            bkb.make_context_section(f'*`{updated_user["user_hashname"]}`* changed their profile info recently!'),
-            bkb.make_block_divider()
+            BKitB.make_context_section(f'*`{updated_user["user_hashname"]}`* '
+                                       f'changed their profile info recently!'),
+            BKitB.make_block_divider()
         ]
         for attr in attrs:
             if attr not in updated_user.keys():
                 continue
             blocks += [
-                bkb.make_context_section(attr.title()),
-                bkb.make_block_section(
+                BKitB.make_context_section(attr.title()),
+                BKitB.make_block_section(
                     f"NEW:\n\t{updated_user.get(attr).get('new')}\n\n"
                     f"OLD:\n\t{updated_user.get(attr).get('old')}"),
-                bkb.make_block_divider()
+                BKitB.make_block_divider()
             ]
         Bot.st.send_message(channel=Bot.general_channel, message='user profile update!', blocks=blocks)
 
@@ -244,7 +241,7 @@ def reaction(event_data: dict):
     channel = item.get('channel')
     reaction_emoji = event.get('reaction')
     # This is the timestamp of the reaction
-    react_ts = event.get('event_ts')
+    # react_ts = event.get('event_ts')
     # This is the timestamp of the message
     msg_ts = item.get('ts')
     unique_event_key = f'{channel}|{user}|{msg_ts}|{datetime.now():%F %H}'
@@ -281,7 +278,7 @@ def reaction(event_data: dict):
                 order_by(func.random()).limit(1).one()
             _ = Bot.st.bot.reactions_add(channel=channel, name=emoji.name, timestamp=msg_ts)
         return make_response('', 200)
-    except Exception as _:
+    except Exception:
         # Sometimes we'll get a 'too_many_reactions' error. Disregard in that case
         pass
 

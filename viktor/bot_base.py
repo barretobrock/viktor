@@ -6,6 +6,7 @@ import string
 import sys
 import requests
 from datetime import datetime
+from types import SimpleNamespace
 from typing import (
     List,
     Optional,
@@ -16,7 +17,6 @@ from urllib.parse import urlparse
 import pandas as pd
 import numpy as np
 from slack.errors import SlackApiError
-from datetime import datetime as dt
 from random import (
     randint,
     choice
@@ -27,12 +27,13 @@ from sqlalchemy.sql import (
 )
 from slacktools import (
     SlackBotBase,
-    BlockKitBuilder as bkb
+    BlockKitBuilder as BKitB
 )
-from easylogger import Log
-import viktor.app as vik_app
-from viktor.linguistics import Linguistics
-from viktor.phrases import (
+from slacktools.tools import build_commands
+from loguru import logger
+from viktor import ROOT_PATH
+from viktor.core.linguistics import Linguistics
+from viktor.core.phrases import (
     PhraseBuilders,
     recursive_uwu
 )
@@ -46,329 +47,46 @@ from viktor.model import (
     TableResponse,
     TableSlackUser
 )
+from viktor.db_eng import ViktorPSQLClient
 from viktor.forms import Forms
 
 
-class Viktor:
+class Viktor(Linguistics, PhraseBuilders, Forms):
     """Handles messaging to and from Slack API"""
 
-    def __init__(self, parent_log: Log):
+    def __init__(self, eng: ViktorPSQLClient, bot_cred_entry: SimpleNamespace,  parent_log: logger):
         """
         Args:
 
         """
         self.bot_name = f'{auto_config.BOT_FIRST_NAME} {auto_config.BOT_LAST_NAME}'
-        self.log = Log(parent_log, child_name='viktor_bot')
+        self.log = parent_log.bind(child_name=self.__class__.__name__)
+        self.eng = eng
+        self.bot_creds = bot_cred_entry
         self.triggers = auto_config.TRIGGERS
-        self.test_channel = auto_config.TEST_CHANNEL
+        self.main_channel = auto_config.TEST_CHANNEL
         self.emoji_channel = auto_config.EMOJI_CHANNEL
         self.general_channel = auto_config.GENERAL_CHANNEL
         self.approved_users = auto_config.ADMINS
         self.version = auto_config.VERSION
         self.update_date = auto_config.UPDATE_DATE
 
-        # Begin loading and organizing commands
-        # Command categories
-        cat_basic = 'basic'
-        cat_useful = 'useful'
-        cat_notsouseful = 'not so useful'
-        cat_org = 'org'
-        cat_lang = 'language'
-        cmd_categories = [cat_basic, cat_useful, cat_notsouseful, cat_lang, cat_org]
-        self.commands = {
-            r'^help': {
-                'pattern': 'help',
-                'cat': cat_basic,
-                'desc': 'Description of all the commands I respond to!',
-                'response': [],
-            },
-            r'^about$': {
-                'pattern': 'about',
-                'cat': cat_useful,
-                'desc': 'Bootup time of Viktor\'s current instance, his version and last update date',
-                'response': [self.get_bootup_msg],
-            },
-            r'^m(ain\s?menu|m)': {
-                'pattern': 'main menu|mm',
-                'cat': cat_basic,
-                'desc': 'Wiktor main menu',
-                'response': [self.prebuild_main_menu, 'user', 'channel'],
-            },
-            r'^add emoji': {
-                'pattern': 'add emoji',
-                'cat': cat_useful,
-                'desc': 'Begins emoji upload process',
-                'response': [self.add_emoji_form_p1, 'user', 'channel'],
-            },
-            r'good bo[tiy]': {
-                'pattern': 'good bo[tiy]',
-                'cat': cat_basic,
-                'desc': 'Did I do something right for once?',
-                'response': 'thanks <@{user}>!',
-            },
-            r'^(gsheet[s]?|show) link$': {
-                'pattern': '(gsheets|show) link',
-                'cat': cat_useful,
-                'desc': 'Shows link to Viktor\'s GSheet (acronyms, insults, etc..)',
-                'response': self.show_gsheets_link,
-            },
-            r'^time$': {
-                'pattern': 'time',
-                'cat': cat_basic,
-                'desc': 'Display current server time',
-                'response': [self.get_time],
-            },
-            r'^sauce$': {
-                'pattern': 'sauce',
-                'cat': cat_basic,
-                'desc': 'Handle some ridicule...',
-                'response': 'ay <@{user}> u got some jokes!',
-            },
-            r'^speak$': {
-                'pattern': 'speak',
-                'cat': cat_basic,
-                'desc': '_Really_ basic response here.',
-                'response': 'woof',
-            },
-            r'^show (roles|doo[td]ies)$': {
-                'pattern': 'show (roles|doo[td]ies)',
-                'cat': cat_org,
-                'desc': 'Shows current roles of all the wonderful workers of OKR',
-                'response': [self.build_role_txt, 'channel'],
-            },
-            r'^update (role|doo[td]ies)': {
-                'pattern': 'update dooties',
-                'cat': cat_org,
-                'desc': 'Updates OKR roles of user (or other user). Useful during a lightning reorg.',
-                'response': [self.new_role_form_p1, 'user', 'channel'],
-            },
-            r'^show my (role|doo[td]ie)$': {
-                'pattern': 'show my (role|doo[td]ie)',
-                'cat': cat_org,
-                'desc': 'Shows your current role as of the last reorg.',
-                'response': [self.build_role_txt, 'channel', 'user'],
-            },
-            r'^channel stats$': {
-                'pattern': 'channel stats',
-                'cat': cat_useful,
-                'desc': 'Get a leaderboard of the last 1000 messages posted in the channel',
-                'response': [self.get_channel_stats, 'channel'],
-            },
-            r'^dadjoke': {
-                'pattern': 'dadjoke',
-                'cat': cat_notsouseful,
-                'desc': 'A dadjoke',
-                'response': [PhraseBuilders.dadjoke],
-            },
-            r'^(diddle my brain|affirmation)': {
-                'pattern': 'Positive affirmation',
-                'cat': cat_notsouseful,
-                'desc': 'A positive affirmation',
-                'response': [PhraseBuilders.affirmation],
-            },
-            r'^(ag|acro[-]?guess)': {
-                'pattern': '(acro-guess|ag) <acronym> [-(group|g) <group>, -n <guess-n-times>]',
-                'cat': cat_notsouseful,
-                'desc': 'There are RBNs of TLAs at OKR. This tries RRRRH to guess WTF they mean IRL. '
-                        '\n\t\t\tThe optional group name corresponds to the column name '
-                        'of the acronyms in Viktor\'s spreadsheet',
-                'response': [PhraseBuilders.guess_acronym, 'message'],
-            },
-            r'^ins[ul]{2}t': {
-                'pattern': 'insult <me|thing|person> [-(group|g) <group>]',
-                'cat': cat_notsouseful,
-                'desc': 'Generates an insult. The optional group name corresponds to the column name '
-                        'of the insults in Viktor\'s spreadsheet',
-                'response': [PhraseBuilders.insult, 'message'],
-            },
-            r'^phrases?': {
-                'pattern': 'phrase(s) [-(group|g) <group>, -n <number-of-cycles>]',
-                'cat': cat_notsouseful,
-                'desc': 'Generates an phrase from a collection of words. The optional group name '
-                        'corresponds to the cluster of column names in the "phrases" tab '
-                        'in Viktor\'s spreadsheet',
-                'response': [PhraseBuilders.phrase_generator, 'message'],
-            },
-            r'^compliment': {
-                'pattern': 'compliment <thing|person> [-(group|g) <group>]',
-                'cat': cat_notsouseful,
-                'desc': 'Generates a :q:compliment:q:. The optional group name corresponds to the column name '
-                        'of the compliments in Viktor\'s spreadsheet',
-                'response': [PhraseBuilders.compliment, 'raw_message', 'user'],
-            },
-            r'^facts?': {
-                'pattern': 'facts',
-                'cat': cat_notsouseful,
-                'desc': 'Generates a fact',
-                'response': [self.facts],
-            },
-            r'^conspiracy\s?facts?': {
-                'pattern': 'conspiracyfacts',
-                'cat': cat_notsouseful,
-                'desc': 'Generates a conspiracy fact',
-                'response': [self.conspiracy_fact],
-            },
-            r'^add conspiracyfacts?': {
-                'pattern': 'add conspiracyfact(s)',
-                'cat': cat_notsouseful,
-                'desc': 'Add a conspiracy fact',
-                'response': [self.add_ifact_form, 'user', 'channel'],
-            },
-            r'^emoji[s]? like': {
-                'pattern': 'emoji[s] like <regex-pattern>',
-                'cat': cat_useful,
-                'desc': 'Get emojis matching the regex pattern',
-                'response': [self.get_emojis_like, 'match_pattern', 'message'],
-            },
-            r'^uwu': {
-                'pattern': 'uwu [-l <1 or 2>] <text_to_uwu>',
-                'cat': cat_notsouseful,
-                'desc': 'Makes text pwettiew and easiew to uwundewstand (defaults to highest uwu level)',
-                'response': [PhraseBuilders.uwu, 'raw_message'],
-            },
-            r'(thanks|[no,\s]*\s(t[h]?ank\s?(you|u)))': {
-                'cat': cat_basic,
-                'desc': 'Thank Viktor for something',
-                'response': [self.overly_polite, 'message'],
-            },
-            r'^emoji my words': {
-                'cat': cat_basic,
-                'desc': 'Turn your words into emoji',
-                'response': [self.word_emoji, 'message', 'match_pattern'],
-            },
-            r'^((button|btn)\s?game|bg)': {
-                'pattern': 'button game',
-                'cat': cat_notsouseful,
-                'desc': 'Play a game, win (or lose) LTITs',
-                'response': [self.button_game, 'message'],
-            },
-            r'^access': {
-                'pattern': 'access <literally-anything-else>',
-                'cat': cat_notsouseful,
-                'desc': 'Try to gain access to something - whether that be the power grid to your failing '
-                        'theme park on an island off the coast of Costa Rica or something less pressing.',
-                'response': [self.access_something],
-            },
-            r'^quote me': {
-                'pattern': 'quote me <thing-to-quote>',
-                'cat': cat_notsouseful,
-                'desc': 'Turns your quote into letter emojis',
-                'response': [self.quote_me, 'message', 'match_pattern'],
-            },
-            r'^(he(y|llo)|howdy|salu|hi|qq|wyd|greet|servus|ter|bonj)': {
-                'cat': cat_notsouseful,
-                'desc': 'Responds appropriately to a simple greeting',
-                'response': [PhraseBuilders.sh_response],
-            },
-            r'jackhandey': {
-                'cat': cat_notsouseful,
-                'desc': 'Responds appropriately to a simple greeting',
-                'response': [PhraseBuilders.jackhandey],
-            },
-            r'.*inspir.*': {
-                'pattern': '<any text with "inspir" in it>',
-                'cat': cat_notsouseful,
-                'desc': 'Uploads an inspirational picture',
-                'response': [self.inspirational, 'channel'],
-            },
-            r'.*tihi.*': {
-                'pattern': '<any text with "tihi" in it>',
-                'cat': cat_notsouseful,
-                'desc': 'Giggles',
-                'response': [self.giggle],
-            },
-            r'^shurg': {
-                'pattern': '<any text with "shurg" at the beginning>',
-                'cat': cat_notsouseful,
-                'desc': r'¯\_(ツ)_/¯',
-                'response': [self.shurg, 'message'],
-            },
-            r'^(randcap|mock)': {
-                'pattern': '<any text with "randcap" or "mock" at the beginning>',
-                'cat': cat_notsouseful,
-                'desc': 'whaT dO yOu thiNK iT Does',
-                'response': [self.randcap, 'message'],
-            },
-            r'^onbo[a]?r[d]?ing$': {
-                'pattern': '(onboarding|onboring)',
-                'cat': cat_org,
-                'desc': 'Prints out all the material needed to get a new OKR employee up to speed!',
-                'response': [self.onboarding_docs],
-            },
-            r'^(update\s?level|level\s?up)': {
-                'pattern': '(update level|level up) -u <user>',
-                'cat': cat_org,
-                'desc': 'Accesses an employee\'s LevelUp registry and increments their level',
-                'response': [Forms.build_update_user_level_form]
-            },
-            r'^(gib)?\s?ltits': {
-                'pattern': 'ltits',
-                'cat': cat_org,
-                'desc': 'Distribute or withdraw LTITs from an employee\'s account',
-                'response': [Forms.build_update_user_ltits_form_p1]
-            },
-            r'^show (my )?perk[s]?': {
-                'pattern': 'show [my] perk(s)',
-                'cat': cat_org,
-                'desc': 'Shows the perks an employee has access to at their current level',
-                'response': [self.show_my_perks, 'user']
-            },
-            r'^show all perks': {
-                'pattern': 'show all perks',
-                'cat': cat_org,
-                'desc': 'Shows all perks currently available at OKR',
-                'response': [self.show_all_perks]
-            },
-            r'^e[nt]\s': {
-                'pattern': '(et|en) <word-to-translate>',
-                'cat': cat_lang,
-                'desc': 'Offers a translation of an Estonian word into English or vice-versa',
-                'response': [Linguistics.prep_message_for_translation, 'message', 'match_pattern']
-            },
-            r'^ekss\s': {
-                'pattern': 'ekss <word-to-lookup>',
-                'cat': cat_lang,
-                'desc': 'Offers example usage of the given Estonian word',
-                'response': [Linguistics.prep_message_for_examples, 'message', 'match_pattern']
-            },
-            r'^lemma\s': {
-                'pattern': 'lemma <word-to-lookup>',
-                'cat': cat_lang,
-                'desc': 'Determines the lemma of the Estonian word',
-                'response': [Linguistics.prep_message_for_root, 'message', 'match_pattern']
-            },
-            r'^wfh\s?(time|epoch)': {
-                'pattern': 'wfh (time|epoch)',
-                'cat': cat_useful,
-                'desc': 'Prints the current WFH epoch time',
-                'response': [self.wfh_epoch]
-            },
-            r'^ety\s': {
-                'pattern': 'ety <word>',
-                'cat': cat_useful,
-                'desc': 'Gets the etymology of a given word',
-                'response': [Linguistics.get_etymology, 'message', 'match_pattern']
-            },
-            r'^refresh xoxc\s': {
-                'pattern': 'refresh xoxc <xoxc-token>',
-                'cat': cat_useful,
-                'desc': 'Refresh the xoxc token for emojis',
-                'response': [self.refresh_xoxc, 'message', 'match_pattern']
-            }
-        }
+        super().__init__(eng=eng)
+
+        # Begin loading and organizing commands after all methods are accounted for above
+        self.commands = build_commands(self, cmd_yaml_path=ROOT_PATH.parent.joinpath('commands.yaml'),
+                                       log=self.log)
 
         # Initate the bot, which comes with common tools for interacting with Slack's API
-        self.st = SlackBotBase(triggers=self.triggers, credstore=vik_app.credstore,
-                               test_channel=self.test_channel, commands=self.commands,
-                               cmd_categories=cmd_categories, slack_cred_name=auto_config.BOT_NICKNAME,
-                               parent_log=self.log, use_session=True)
+        self.st = SlackBotBase(bot_cred_entry=bot_cred_entry, triggers=self.triggers,
+                               main_channel=self.main_channel, parent_log=self.log, use_session=True)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
         self.generate_intro()
 
-        if vik_app.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_STARTUP):
-            self.st.message_test_channel(blocks=self.get_bootup_msg())
+        if self.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_STARTUP):
+            self.st.message_main_channel(blocks=self.get_bootup_msg())
 
         # Place to temporarily store things. Typical structure is activity -> user -> data
         self.state_store = {
@@ -380,12 +98,16 @@ class Viktor:
         self.log.debug(f'{self.bot_name} booted up!')
 
     def get_bootup_msg(self) -> List[Dict]:
-        return [bkb.make_context_section([
-            bkb.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!"),
-            bkb.markdown_section(f"(updated {self.update_date})")
+        return [BKitB.make_context_section([
+            BKitB.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!"),
+            BKitB.markdown_section(f"(updated {self.update_date})")
         ])]
 
-    def generate_intro(self):
+    def search_help_block(self, message: str):
+        # TODO: parse tag or group out of message
+        return 'Tag or group not found in message'
+
+    def generate_intro(self) -> List[Dict]:
         """Generates the intro message and feeds it in to the 'help' command"""
         intro = f"Здравствуйте! I'm *{self.bot_name}* (:Q::regional_indicator_v::Q: for short).\n" \
                 f"I can help do stuff for you, but you'll need to call my attention first with " \
@@ -393,9 +115,7 @@ class Viktor:
         avi_url = "https://ca.slack-edge.com/TM1A69HCM-ULV018W73-1a94c7650d97-512"
         avi_alt = 'hewwo'
         # Build the help text based on the commands above and insert back into the commands dict
-        self.commands[r'^help']['response'] = self.st.build_help_block(intro, avi_url, avi_alt)
-        # Update the command dict in SlackBotBase
-        self.st.update_commands(self.commands)
+        return self.st.build_help_block(intro, avi_url, avi_alt)
 
     def refresh_xoxc(self, message: str, match_pattern: str):
         xoxc = re.sub(match_pattern, '', message).strip()
@@ -406,18 +126,18 @@ class Viktor:
         """Runs just before instance is destroyed"""
         _ = args
         notify_block = [
-            bkb.make_context_section([
-                bkb.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
+            BKitB.make_context_section([
+                BKitB.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
             ])
         ]
-        if vik_app.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_SHUTDOWN):
-            self.st.message_test_channel(blocks=notify_block)
+        if self.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_SHUTDOWN):
+            self.st.message_main_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
         self.log.close()
         sys.exit(0)
 
     def process_slash_command(self, event_dict: Dict):
-        """Hands off the slash command processing while also refeshing the session"""
+        """Hands off the slash command processing while also refreshing the session"""
         self.st.parse_slash_command(event_dict)
 
     def process_event(self, event_dict: Dict):
@@ -429,6 +149,7 @@ class Viktor:
         """Handles an incoming action (e.g., when a button is clicked)"""
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
+        self.log.debug(f'Receiving action_id: {action_id} and value: {action_value}')
 
         if 'buttongame' in action_id:
             # Button game stuff
@@ -444,9 +165,9 @@ class Viktor:
             self.new_role_form_p2(user=user, channel=channel, new_title=action_value)
         elif action_id == 'new-role-p2':
             # Update the description part of the role. Title should already be updated in p1
-            user_obj = vik_app.eng.get_user_from_hash(user)
+            user_obj = self.eng.get_user_from_hash(user)
             if action_value != user_obj.role_desc:
-                with vik_app.eng.session_mgr() as session:
+                with self.eng.session_mgr() as session:
                     session.add(user_obj)
                     user_obj.role_desc = action_value
             self.build_role_txt(channel=channel, user=user)
@@ -454,13 +175,14 @@ class Viktor:
             self.update_user_level(channel=channel, requesting_user=user,
                                    target_user=action_dict.get('selected_user'))
         elif action_id == 'ltits-user-p1':
+            new_ltit_req: Dict
             new_ltit_req = {user: action_dict.get('selected_user')}
             if 'new-ltit-req' in self.state_store.keys():
                 self.state_store['new-ltit-req'].update(new_ltit_req)
             else:
                 self.state_store['new-ltit-req'] = new_ltit_req
-            tgt_user_obj = vik_app.eng.get_user_from_hash(action_dict.get('selected_user'))
-            form_p2 = Forms.build_update_user_ltits_form_p2(tgt_user_obj.ltits)
+            tgt_user_obj = self.eng.get_user_from_hash(action_dict.get('selected_user'))
+            form_p2 = self.build_update_user_ltits_form_p2(tgt_user_obj.ltits)
             self.st.send_message(channel=channel, message='LTITs form p2', blocks=form_p2)
         elif action_id == 'ltits-user-p2':
             target_user = self.state_store['new-ltit-req'].get(user)
@@ -511,9 +233,9 @@ class Viktor:
                     except SlackApiError:
                         # Most likely because the block was a standard rich text one, which isn't allowed.
                         #   Fall back to basic text.
-                        self.st.send_message(channel, message=PhraseBuilders.uwu(msg_text))
+                        self.st.send_message(channel, message=self.uwu(msg_text))
                 else:
-                    self.st.send_message(channel, message=PhraseBuilders.uwu(msg_text))
+                    self.st.send_message(channel, message=self.uwu(msg_text))
             elif action_id == 'emojiword':
                 # Uwu the message
                 msg = event_dict.get('message')
@@ -540,18 +262,16 @@ class Viktor:
 
     def prebuild_main_menu(self, user_id: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""
-        Forms.build_main_menu(slack_api=self.st, user=user_id, channel=channel)
+        self.build_main_menu(slack_api=self.st, user=user_id, channel=channel)
 
     # General support methods
     # ====================================================
 
-    @staticmethod
-    def show_gsheets_link() -> str:
-        return f'https://docs.google.com/spreadsheets/d/{vik_app.vik_creds.spreadsheet_key}/'
+    def show_gsheets_link(self) -> str:
+        return f'https://docs.google.com/spreadsheets/d/{self.bot_creds.spreadsheet_key}/'
 
-    @staticmethod
-    def show_onboring_link() -> str:
-        return f'https://docs.google.com/document/d/{vik_app.vik_creds.onboarding_key}/edit?usp=sharing'
+    def show_onboring_link(self) -> str:
+        return f'https://docs.google.com/document/d/{self.bot_creds.onboarding_key}/edit?usp=sharing'
 
     def get_channel_stats(self, channel: str) -> str:
         """Collects posting stats for a given channel"""
@@ -635,10 +355,9 @@ class Viktor:
 
     # Basic / Static standalone methods
     # ====================================================
-    @staticmethod
-    def sarcastic_response() -> str:
+    def sarcastic_response(self) -> str:
         """Sends back a sarcastic response when user is not allowed to use the action requested"""
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             resp = session.query(TableResponse.text).filter(and_(
                 TableResponse.type == ResponseType.GENERAL,
                 TableResponse.category == ResponseCategory.SARCASTIC
@@ -717,13 +436,13 @@ class Viktor:
     @staticmethod
     def get_time() -> str:
         """Gets the server time"""
-        return f'The server time is `{dt.today():%F %T}`'
+        return f'The server time is `{datetime.today():%F %T}`'
 
     @staticmethod
     def wfh_epoch() -> List[dict]:
         """Calculates WFH epoch time"""
-        wfh_epoch = dt(year=2020, month=3, day=3, hour=19, minute=15)
-        now = dt.now()
+        wfh_epoch = datetime(year=2020, month=3, day=3, hour=19, minute=15)
+        now = datetime.now()
         diff = (now - wfh_epoch)
         wfh_secs = diff.total_seconds()
         strange_units = {
@@ -750,15 +469,15 @@ class Viktor:
 
         unit_txt = '\n'.join(units)
         return [
-            bkb.make_context_section([
-                bkb.markdown_section('WFH Epoch')
+            BKitB.make_context_section([
+                BKitB.markdown_section('WFH Epoch')
             ]),
-            bkb.make_block_section(
+            BKitB.make_block_section(
                 f'Current WFH epoch time is *`{wfh_secs:.0f}`*.'
                 f'\n ({diff})',
             ),
-            bkb.make_context_section([
-                bkb.markdown_section(f'{unit_txt}')
+            BKitB.make_context_section([
+                BKitB.markdown_section(f'{unit_txt}')
             ])
         ]
 
@@ -776,8 +495,7 @@ class Viktor:
                     f.write(img.content)
                 self.st.upload_file(channel, '/tmp/inspirational.jpg', 'inspirational-shit.jpg')
 
-    @staticmethod
-    def button_game(message: str):
+    def button_game(self, message: str):
         """Renders 5 buttons that the user clicks - one button has a value that awards them points"""
         default_limit = 100
         limit = None
@@ -796,7 +514,7 @@ class Viktor:
         n_buttons = randint(5, 12)
         items = list(range(1, n_buttons + 1))
 
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             emojis = [x.name for x in session.query(TableEmoji).order_by(func.random()).limit(n_buttons).all()]
         rand_val = randint(1, n_buttons)
         # Pick two places where negative values should go
@@ -812,21 +530,21 @@ class Viktor:
                 neg_values.append(val)
             else:
                 val = 0
-            btn_blocks.append(bkb.make_action_button(f':{emojis[i - 1]}:', value=f'bg|{val + 5000}',
-                                                     action_id=f'buttongame-{i}'))
+            btn_blocks.append(BKitB.make_action_button(f':{emojis[i - 1]}:', value=f'bg|{val + 5000}',
+                                                       action_id=f'buttongame-{i}'))
 
         blocks = [
-            bkb.make_block_section(':spinny-rainbow-sheep:'
-                                   ':alphabet-yellow-b::alphabet-yellow-u::alphabet-yellow-t:'
-                                   ':alphabet-yellow-t::alphabet-yellow-o::alphabet-yellow-n:'
-                                   ':blank::alphabet-yellow-g::alphabet-yellow-a::alphabet-yellow-m:'
-                                   ':alphabet-yellow-e::alphabet-yellow-exclamation::spinny-rainbow-sheep:'),
-            bkb.make_context_section([
-                bkb.markdown_section('Try your luck and guess which button is hiding the LTITs!! '
-                                     f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
-                                     f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.')
+            BKitB.make_block_section(':spinny-rainbow-sheep:'
+                                     ':alphabet-yellow-b::alphabet-yellow-u::alphabet-yellow-t:'
+                                     ':alphabet-yellow-t::alphabet-yellow-o::alphabet-yellow-n:'
+                                     ':blank::alphabet-yellow-g::alphabet-yellow-a::alphabet-yellow-m:'
+                                     ':alphabet-yellow-e::alphabet-yellow-exclamation::spinny-rainbow-sheep:'),
+            BKitB.make_context_section([
+                BKitB.markdown_section('Try your luck and guess which button is hiding the LTITs!! '
+                                       f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
+                                       f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.')
             ]),
-            bkb.make_action_button_group(btn_blocks)
+            BKitB.make_action_button_group(btn_blocks)
         ]
 
         return blocks
@@ -836,16 +554,39 @@ class Viktor:
         msg = re.sub(match_pattern, '', message).strip()
         return self.st.build_phrase(msg)
 
-    def add_emoji_form_p1(self, user: str, channel: str):
+    def add_emoji_form_p1(self, user: str, channel: str, message: str):
         """Builds form to intake emoji and upload"""
-        form1 = Forms.build_new_emoji_form_p1()
-        _ = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
-                                            blocks=form1)
+        # If the message already contains a url, avoid sending the URL collection form and just process the
+        #   info immediately as it would be for part 2
+        url = None
+        if 'https://' in message:
+            url_rgx = re.search(r'https://\S+', message)
+            if url_rgx is not None:
+                url = url_rgx.group()
+        if url is not None:
+            # Store this user's first portion of the new emoji request
+            new_emoji_req = {user: {'url': url}}
+            self.state_store['new-emoji'].update(new_emoji_req)
+            # Parse out the file name from the url
+            emoji_name = os.path.splitext(os.path.split(urlparse(url).path)[1])[0]
+            self.add_emoji_form_p2(user=user, channel=channel, url=url, suggested_name=emoji_name)
+        else:
+            form1 = self.build_new_emoji_form_p1()
+            _ = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
+                                                blocks=form1)
 
     def add_emoji_form_p2(self, user: str, channel: str, url: str, suggested_name: str):
         """Part 2 of emoji intake"""
-        form2 = Forms.build_new_emoji_form_p2(url, suggested_name=suggested_name)
-        _ = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
+        # Check name against existing
+        with self.eng.session_mgr() as session:
+            exists: TableEmoji
+            exists = session.query(TableEmoji).filter(TableEmoji.name == suggested_name).one_or_none()
+            if exists is not None:
+                # Name already exists. Modify it
+                suggested_name += f'{exists.emoji_id}'
+
+        form2 = self.build_new_emoji_form_p2(url, suggested_name=suggested_name)
+        _ = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p2',
                                             blocks=form2)
 
     def add_emoji(self, user: str, channel: str, url: str, new_name: str):
@@ -862,38 +603,28 @@ class Viktor:
     def add_ifact_form(self, user: str, channel: str):
         """Builds form to intake new fact"""
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New ifact form',
-                                            blocks=Forms.build_ifact_input_form_p1())
+                                            blocks=self.build_ifact_input_form_p1())
 
     def add_ifact(self, user: str, channel: str, txt: str):
+        _ = user
         fact = TableResponse(response_type=ResponseType.FACT, category=ResponseCategory.FOILHAT, text=txt)
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             session.add(fact)
         self.st.send_message(channel=channel, message=f'Fact added! id:`{fact.id}`\n{fact.text}')
-
-    # Phrase building methods
-    # ------------------------------------------------
-
-    @staticmethod
-    def facts():
-        return PhraseBuilders.facts(category=ResponseCategory.STANDARD)
-
-    @staticmethod
-    def conspiracy_fact():
-        return PhraseBuilders.facts(category=ResponseCategory.FOILHAT)
 
     # OKR Methods
     # ------------------------------------------------
     def onboarding_docs(self) -> List[dict]:
         """Returns links to everything needed to bring a new OKR employee up to speed"""
         docs = [
-            bkb.make_block_section([
+            BKitB.make_block_section([
                 "Welcome to OKR! We're glad to have you on board!\nCheck out these links below "
                 "to get familiar with OKR and the industry we support!"
             ]),
-            bkb.make_block_section([
+            BKitB.make_block_section([
                 f"\t<{self.show_onboring_link()}|Onboarding Doc>\n\t<{self.show_gsheets_link()}|Viktor's GSheet>\n"
             ]),
-            bkb.make_block_section([
+            BKitB.make_block_section([
                 "For any questions, reach out to the CEO or our Head of Recruiting. "
                 "Don't know who they are? Well, figure it out!"
             ])
@@ -902,16 +633,16 @@ class Viktor:
 
     def show_all_perks(self) -> List[Dict]:
         """Displays all the perks"""
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             perks = session.query(TablePerk).all()
             session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
-            bkb.make_header('OKR Perks!'),
-            bkb.make_context_section([
-                bkb.markdown_section('you\'ll never see anything better, trust us!')
+            BKitB.make_header('OKR Perks!'),
+            BKitB.make_context_section([
+                BKitB.markdown_section('you\'ll never see anything better, trust us!')
             ]),
-            bkb.make_block_section([p for p in final_perks])
+            BKitB.make_block_section([p for p in final_perks])
         ]
 
     @staticmethod
@@ -936,7 +667,7 @@ class Viktor:
     def show_my_perks(self, user: str) -> Union[List[Dict], str]:
         """Lists the perks granted at the user's current level"""
         # Get the user's level
-        user_obj = vik_app.eng.get_user_from_hash(user_hash=user)
+        user_obj = self.eng.get_user_from_hash(user_hash=user)
         if user_obj is None:
             return 'User not found in OKR roles sheet :frowning:'
 
@@ -944,37 +675,37 @@ class Viktor:
         ltits = user_obj.ltits
 
         # Get perks
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             perks = session.query(TablePerk).filter(TablePerk.level <= level).all()
             session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
-            bkb.make_header(f'Perks for our very highly valued `{user_obj.name}`!'),
-            bkb.make_context_section([
-                bkb.markdown_section('you\'ll _really_ never see anything better, trust us!')
+            BKitB.make_header(f'Perks for our very highly valued `{user_obj.name}`!'),
+            BKitB.make_context_section([
+                BKitB.markdown_section('you\'ll _really_ never see anything better, trust us!')
             ]),
-            bkb.make_block_section('Here are the _amazing_ perks you have unlocked!!'),
-            bkb.make_block_section([p for p in final_perks]),
-            bkb.make_block_section(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
+            BKitB.make_block_section('Here are the _amazing_ perks you have unlocked!!'),
+            BKitB.make_block_section([p for p in final_perks]),
+            BKitB.make_block_section(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
         ]
 
     def new_role_form_p1(self, user: str, channel: str):
         """Builds form to intake emoji and upload"""
         # Load user
-        user_obj = vik_app.eng.get_user_from_hash(user)
-        form1 = Forms.build_role_input_form_p1(existing_title=user_obj.role_title)
+        user_obj = self.eng.get_user_from_hash(user)
+        form1 = self.build_role_input_form_p1(existing_title=user_obj.role_title)
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p1',
                                             blocks=form1)
 
     def new_role_form_p2(self, user: str, channel: str, new_title: str):
         """Part 2 of new role intake"""
         # Load user
-        user_obj = vik_app.eng.get_user_from_hash(user)
+        user_obj = self.eng.get_user_from_hash(user)
         if new_title != user_obj.role_title:
-            with vik_app.eng.session_mgr() as session:
+            with self.eng.session_mgr() as session:
                 session.add(user_obj)
                 user_obj.role_title = new_title
-        form2 = Forms.build_role_input_form_p2(title=new_title, existing_desc=user_obj.role_desc)
+        form2 = self.build_role_input_form_p2(title=new_title, existing_desc=user_obj.role_desc)
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p2',
                                             blocks=form2)
 
@@ -988,10 +719,10 @@ class Viktor:
             # Some people should stay permanently at lvl 1
             return 'Hmm... that\'s weird. It says you can\'t be leveled up??'
 
-        user_obj = vik_app.eng.get_user_from_hash(target_user)
+        user_obj = self.eng.get_user_from_hash(target_user)
         if user_obj is None:
             return f'user <@{target_user}> not found in HR records... :nervous_peach:'
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             session.add(user_obj)
             user_obj.level += 1
         self.st.send_message(channel, f'Level for *`{user_obj.name}`* updated to *`{user_obj.level}`*.')
@@ -1003,17 +734,16 @@ class Viktor:
         if requesting_user not in self.approved_users:
             return 'LOL sorry, LTIT distributions are SLT-approved only'
 
-        user_obj = vik_app.eng.get_user_from_hash(target_user)
+        user_obj = self.eng.get_user_from_hash(target_user)
         if user_obj is None:
             return f'user <@{target_user}> not found in HR records... :nervous_peach:'
-        with vik_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             session.add(user_obj)
             user_obj.ltits += ltits
         self.st.send_message(
             channel, f'LTITs for  *`{user_obj.name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.')
 
-    @staticmethod
-    def show_roles(user: str = None) -> Union[List[Dict], str]:
+    def show_roles(self, user: str = None) -> Union[List[Dict], str]:
         """Prints users roles to channel"""
         def build_employee_info(emp: TableSlackUser) -> str:
             """Build out an individual line of an employee's info"""
@@ -1032,22 +762,22 @@ class Viktor:
         if user is None:
             # Printing roles for everyone
             roles_output += [
-                bkb.make_header('OKR Roles'),
-                bkb.make_context_section([
-                    bkb.markdown_section('_(as of last reorg)_')
+                BKitB.make_header('OKR Roles'),
+                BKitB.make_context_section([
+                    BKitB.markdown_section('_(as of last reorg)_')
                 ])
             ]
             # Iterate through roles, print them out
-            with vik_app.eng.session_mgr() as session:
+            with self.eng.session_mgr() as session:
                 users = session.query(TableSlackUser).all()
                 session.expunge_all()
-            roles_output += [bkb.make_block_section([build_employee_info(emp=u)]) for u in users]
+            roles_output += [BKitB.make_block_section([build_employee_info(emp=u)]) for u in users]
         else:
             # Printing role for an individual user
-            user_obj = vik_app.eng.get_user_from_hash(user_hash=user)
+            user_obj = self.eng.get_user_from_hash(user_hash=user)
             if user_obj is None:
                 return f'user <@{user}> not found in HR records... :nervous_peach:'
-            roles_output.append(bkb.make_block_section([build_employee_info(emp=user_obj)]))
+            roles_output.append(BKitB.make_block_section([build_employee_info(emp=user_obj)]))
 
         return roles_output
 

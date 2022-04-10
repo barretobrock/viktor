@@ -1,3 +1,4 @@
+*.bak
 secretprops.properties
 development
 # Byte-compiled / optimized / DLL files

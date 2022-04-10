@@ -1,13 +1,14 @@
 import re
-from easylogger import Log
+from loguru import logger
 from viktor.model import TablePotentialEmoji
-from viktor.utils import XPathExtractor
 from viktor.db_eng import ViktorPSQLClient
+from viktor.core.text_cleaner import XPathExtractor
 
 
-def scrape_emojis(psql_engine: ViktorPSQLClient, log: Log):
+def scrape_emojis(psql_engine: ViktorPSQLClient, log: logger):
     """Scrape a site for emojis to announce newly-added emojis periodically"""
     url = 'https://slackmojis.com/emojis/recent'
+    log.debug('Loading recent emojis page...')
     xpath_extractor = XPathExtractor(url)
 
     emoji_list = xpath_extractor.xpath('//ul[@class="emojis"]', single=True)

@@ -13,7 +13,7 @@ from typing import (
 )
 from io import StringIO
 from lxml import etree
-from slacktools import BlockKitBuilder as bkb
+from slacktools import BlockKitBuilder as BKitB
 
 
 class Linguistics:
@@ -69,10 +69,10 @@ class Linguistics:
         results = content.xpath('//div[contains(@class, "word--C9UPa")]')[:3]
         output = []
         if len(results) > 0:
-            output.append(bkb.make_header(f'Etymology of `{word}`'))
+            output.append(BKitB.make_header(f'Etymology of `{word}`'))
             for result in results:
                 title, text = get_title_and_desc(result)
-                output.append(bkb.make_block_section([f'*`{title}`*', text]))
+                output.append(BKitB.make_block_section([f'*`{title}`*', text]))
 
         if len(output) > 0:
             return output

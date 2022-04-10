@@ -1,13 +1,9 @@
 import enum
 from sqlalchemy import (
     Column,
-    Boolean,
-    VARCHAR,
     Integer,
-    Enum,
-    ForeignKey
+    Enum
 )
-from sqlalchemy.orm import relationship
 # local imports
 from viktor.model.base import Base
 

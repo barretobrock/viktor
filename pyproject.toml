@@ -1,0 +1,42 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "viktor"
+version = '1.6.0'
+description = "A slack bot for various automation activities and.... fun."
+authors = ["bobrock <bobrock@tuta.io>"]
+license = "MIT"
+readme = 'README.md'
+repository = 'https://github.com/barretobrock/viktor'
+packages = [
+    { include = 'viktor' },
+]
+include = ["CHANGELOG.md"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+slacktools = {git = "https://github.com/barretobrock/slacktools.git"}
+Flask = "2.1.1"
+psycopg2 = "2.9.3"
+lxml = "^4.6.4"
+loguru = "0.6.0"
+numpy = "^1.22.3"
+pandas = "^1.4.2"
+pykeepass = "^4.0.1"
+requests = ">=2.23.0"
+slackeventsapi = "3.0.1"
+sqlalchemy = "1.4.32"
+pytz = "^2021.3"
+# Optional dependencies would go down here
+# example = { version = ">=1.7.0", optional = true }
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.1.1"
+pytest-cov = "^3.0.0"
+flake8 = "^4.0.1"
+tox = "^3.24.5"
+
+[tool.poetry.extras]
+test = ["pytest"]

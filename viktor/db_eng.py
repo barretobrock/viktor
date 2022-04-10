@@ -1,16 +1,10 @@
-import traceback
 from typing import (
     Dict,
     Optional,
     Union
 )
-from contextlib import contextmanager
-from sqlalchemy.engine import (
-    create_engine,
-    URL
-)
-from sqlalchemy.orm import sessionmaker
-from easylogger import Log
+from loguru import logger
+from slacktools.db_engine import PSQLClient
 from viktor.model import (
     BotSettingType,
     ErrorType,
@@ -21,33 +15,12 @@ from viktor.model import (
 )
 
 
-class ViktorPSQLClient:
+class ViktorPSQLClient(PSQLClient):
     """Creates Postgres connection engine"""
 
-    def __init__(self, props: Dict, parent_log: Log, **kwargs):
-        self.log = Log(parent_log, child_name=self.__class__.__name__)
-        self.engine = create_engine(URL.create(
-            drivername='postgresql+psycopg2',
-            username=props.get('usr'),
-            password=props.get('pwd'),
-            host=props.get('host'),
-            port=props.get('port'),
-            database=props.get('database')
-        ))
-        self._dbsession = sessionmaker(bind=self.engine)
-
-    @contextmanager
-    def session_mgr(self):
-        """This sets up a transactional scope around a series of operations"""
-        session = self._dbsession()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+    def __init__(self, props: Dict, parent_log: logger, **kwargs):
+        _ = kwargs
+        super().__init__(props=props, parent_log=parent_log)
 
     def get_bot_setting(self, setting: BotSettingType) -> Optional[Union[int, bool]]:
         """Attempts to return a given bot setting"""
@@ -59,6 +32,13 @@ class ViktorPSQLClient:
                 # Boolean
                 return result.setting_int == 1
             return result.setting_int
+
+    def set_bot_setting(self, setting: BotSettingType, setting_val: Union[int, bool]):
+        """Attempts to set a given setting"""
+        with self.session_mgr() as session:
+            session.query(TableBotSetting).filter(TableBotSetting.setting_name == setting).update(
+                {TableBotSetting.setting_int: setting_val}
+            )
 
     def get_user_from_hash(self, user_hash: str) -> Optional[TableSlackUser]:
         """Takes in a slack user hash, outputs the expunged object, if any"""
@@ -77,16 +57,8 @@ class ViktorPSQLClient:
                 session.expunge(channel)
         return channel
 
-    def log_error_to_db(self, e: Exception, error_type: ErrorType, user_key: int = None,
-                        channel_key: int = None):
+    def log_viktor_error_to_db(self, e: Exception, error_type: ErrorType, user_key: int = None,
+                               channel_key: int = None):
         """Logs error info to the service_error_log table"""
-        err = TableError(
-            error_type=error_type,
-            error_class=e.__class__.__name__,
-            error_text=str(e),
-            error_traceback=''.join(traceback.format_tb(e.__traceback__)),
-            user_key=user_key,
-            channel_key=channel_key,
-        )
-        with self.session_mgr() as session:
-            session.add(err)
+        self.log_error_to_db(e=e, err_tbl=TableError, error_type=error_type, user_key=user_key,
+                             channel_key=channel_key)

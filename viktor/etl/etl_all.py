@@ -5,7 +5,7 @@ from typing import (
     Dict
 )
 from slack.errors import SlackApiError
-from easylogger import Log
+from loguru import logger
 from slacktools import (
     SecretStore,
     GSheetReader,
@@ -62,7 +62,7 @@ class ETL:
 
     def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True):
         self.log = Log('vik-etl', log_level_str='DEBUG', log_to_file=True)
-        self.log.debug('Optaining credential file...')
+        self.log.debug('Obtaining credential file...')
         credstore = SecretStore('secretprops-davaiops.kdbx')
 
         self.log.debug('Opening up the database...')
@@ -328,4 +328,4 @@ if __name__ == '__main__':
     # etl.etl_quotes()
     # etl.etl_responses()
     # etl.etl_bot_settings()
-    etl = ETL(tables=[TablePotentialEmoji], env='dev')
+    etl = ETL(tables=[TablePotentialEmoji], env='prod', drop_all=False)
