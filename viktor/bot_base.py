@@ -78,14 +78,18 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                                        log=self.log)
 
         # Initate the bot, which comes with common tools for interacting with Slack's API
+        self.log.debug('Spinning up SlackBotBase')
         self.st = SlackBotBase(bot_cred_entry=bot_cred_entry, triggers=self.triggers,
                                main_channel=self.main_channel, parent_log=self.log, use_session=True)
+        # Pass in commands to SlackBotBase, where task delegation occurs
+        self.log.debug('Patching in commands to SBB...')
+        self.st.update_commands(commands=self.commands)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
-        self.generate_intro()
 
         if self.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_STARTUP):
+            self.log.debug('IS_ANNOUNCE_STARTUP was enabled, so sending message to main channel')
             self.st.message_main_channel(blocks=self.get_bootup_msg())
 
         # Place to temporarily store things. Typical structure is activity -> user -> data

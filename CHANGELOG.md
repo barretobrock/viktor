@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.2] - 2022-04-10
+#### Fixed
+ - Forgot to patch commands in to `SlackBotBase`, which is where the task delegation occurs. Without this, viktor wasn't handling any command
+ 
 ### [1.6.1] - 2022-04-10
 #### Added
  - Some decent test methods to start off with
