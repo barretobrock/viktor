@@ -133,7 +133,6 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         if self.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_SHUTDOWN):
             self.st.message_main_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
-        self.log.close()
         sys.exit(0)
 
     def process_slash_command(self, event_dict: Dict):

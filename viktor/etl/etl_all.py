@@ -1,4 +1,5 @@
 import re
+import sys
 import time
 from typing import (
     List,
@@ -8,9 +9,9 @@ from slack.errors import SlackApiError
 from loguru import logger
 from slacktools import (
     SecretStore,
-    GSheetReader,
     SlackTools
 )
+from slacktools.gsheet import GSheetAgent
 from viktor.model import (
     AcronymType,
     Base,
@@ -32,7 +33,7 @@ from viktor.model import (
 )
 from viktor.settings import auto_config
 from viktor.db_eng import ViktorPSQLClient
-from viktor.utils import collect_pins
+from viktor.core.pin_collector import collect_pins
 
 
 class ETL:
@@ -61,7 +62,7 @@ class ETL:
     DENY_LIST_CHANNELS = [IMPO_CHANNEL, CAH_CHANNEL]
 
     def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True):
-        self.log = Log('vik-etl', log_level_str='DEBUG', log_to_file=True)
+        self.log = logger.bind(sink=sys.stdout, level='DEBUG')
         self.log.debug('Obtaining credential file...')
         credstore = SecretStore('secretprops-davaiops.kdbx')
 
@@ -83,9 +84,9 @@ class ETL:
         Base.metadata.create_all(self.psql_client.engine, tables=tbl_objs)
 
         self.log.debug('Authenticating credentials for services...')
-        cah_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
-        self.gsr = GSheetReader(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
-        self.st = SlackTools(credstore, auto_config.BOT_NICKNAME, self.log)
+        vik_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
+        self.gsr = GSheetAgent(sec_store=credstore, sheet_key=vik_creds.spreadsheet_key)
+        self.st = SlackTools(bot_cred_entry=vik_creds, parent_log=self.log, use_session=False)
         self.log.debug('Completed loading services')
 
     def etl_bot_settings(self):

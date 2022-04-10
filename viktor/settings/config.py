@@ -1,5 +1,8 @@
 """Configuration setup"""
-from viktor._version import get_versions
+from viktor import (
+    __version__,
+    __update_date__
+)
 
 
 class Common(object):
@@ -9,9 +12,8 @@ class Common(object):
     BOT_NICKNAME = 'viktor'
     ADMINS = ['UM35HE6R5']
 
-    _v = get_versions()
-    VERSION = _v['version']
-    UPDATE_DATE = _v['date']
+    VERSION = __version__
+    UPDATE_DATE = __update_date__
 
     TEST_CHANNEL = 'CM376Q90F'
     EMOJI_CHANNEL = 'CLWCPQ2TV'

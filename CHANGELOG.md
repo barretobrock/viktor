@@ -15,6 +15,12 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.1] - 2022-04-10
+#### Added
+ - Some decent test methods to start off with
+#### Fixed
+ - command YAML structure adjusted due to `slacktools` adjustment
+ 
 ### [1.6.0] - 2022-04-08
 #### Added
  - CHANGELOG

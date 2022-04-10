@@ -3,7 +3,7 @@ from pathlib import Path
 from loguru import logger
 
 
-SERVICE_NAME = 'cah'
+SERVICE_NAME = 'viktor'
 
 
 def get_base_logger() -> logger:

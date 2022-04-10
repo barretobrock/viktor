@@ -1,8 +1,5 @@
 from unittest import TestCase, main
-from unittest.mock import (
-    patch,
-    MagicMock
-)
+from unittest.mock import MagicMock
 from tests.common import (
     get_test_logger,
     random_string

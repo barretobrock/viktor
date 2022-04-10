@@ -1,5 +1,5 @@
 # Expected structure for commands:
-#   -   <cmd_regex>:
+#   <cmd_regex>:
 #       name: <command_name>
 #       tags: <comma-separated-tags>
 #       desc: <description>
@@ -16,7 +16,7 @@
 #       response-txt: something <@{user}>
 
 commands:
-    -   group-support:
+    group-support:
         ^help:
             tags:
                 - support
@@ -91,7 +91,7 @@ commands:
                     - match_pattern
         ^((button|btn)\s?game|bg):
             tags:
-                - game
+                - games
                 - ui
             desc: Play a button game. win (or lose..........)
             response-cmd:
@@ -104,7 +104,7 @@ commands:
             desc: Prints the current WFH epoch time
             response-cmd:
                 callable: wfh_epoch
-    -   groups-okr:
+    groups-okr:
         ^onbo[a]?r[d]?ing$:
             tags:
                 - okr
@@ -179,7 +179,7 @@ commands:
                 args:
                     - channel
                     - user
-    -   groups-linguistics:
+    groups-linguistics:
         ^e[nt]\s+:
             tags:
                 - linguistics
@@ -216,7 +216,7 @@ commands:
                 args:
                     - message
                     - match_pattern
-    -   groups-random:
+    groups-random:
         ^access:
             tags:
                 - random

@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "viktor"
-version = '1.6.0'
+version = '1.6.1'
 description = "A slack bot for various automation activities and.... fun."
 authors = ["bobrock <bobrock@tuta.io>"]
 license = "MIT"
