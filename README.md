@@ -19,24 +19,39 @@ sudo dpkg-reconfigure dash
 cd ~/venvs && python3 -m venv viktor
 source ~/venvs/viktor/bin/activate
 cd ~/extras && git clone https://github.com/barretobrock/viktor.git
-cd viktor && sh update_script.sh
+cd viktor && sh ppmgr.sh pull
 
 # Add service file to system
 sudo cp viktor.service /lib/systemd/system/
-sudo chmod 644 /lib/systemd/system/cah.service
+sudo chmod 644 /lib/systemd/system/viktor.service
 sudo systemctl daemon-reload
-sudo systemctl enable cah.service
+sudo systemctl enable viktor.service
 ```
 
 ## Upgrade
 ```bash
-pip3 install git+https://github.com/barretobrock/viktor.git#egg=viktor --upgrade
+python3 -m pip install .
+# or if you're me and want to complicate things for the sake of automation
+sh ppmgr.sh pull
 ```
 
 ## Run
 ```bash
 python3 run.py
 ```
+
+## Local Development
+As of April 2022, I switched over to [poetry]() to try and better wrangle with ever-changing requirements and a consistently messy setup.py file. Here's the process to rebuild a local development environment (assuming the steps in [Installation](#installation) have already been done):
+### Install poetry
+I followed the [guide](https://python-poetry.org/docs/#installation) in the poetry docs to install, following the guidelines for using `curl`. I'd recommend to my future self to just install with `pipx` next time, as that seems to do the trick without `curl`ing a remote file and executing :yikes: So:
+```bash
+# Prereq: sudo apt install pipx
+pipx install poetry
+# Confirm install
+poetry --version
+```
+### Updating deps
+To update, change the deps in `pyproject.toml`, then run `poetry update` to rebuild the lock file and then `poetry install` to reinstall
 
 ## Local testing
 
