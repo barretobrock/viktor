@@ -15,6 +15,12 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.4] - 2022-04-15
+#### Added
+ - built-out command search logic 
+#### Changed
+ - phrases, compliments, insults now pull randomly from database instead of downloading all the info first and randomly selecting
+ 
 ### [1.6.3] - 2022-04-10
 #### Changed
  - optional flags documentation now have a bit clearer syntax 
