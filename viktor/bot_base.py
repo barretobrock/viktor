@@ -30,6 +30,7 @@ from slacktools import (
     BlockKitBuilder as BKitB
 )
 from slacktools.tools import build_commands
+from slacktools.slack_input_parser import SlackInputParser
 from loguru import logger
 from viktor import ROOT_PATH
 from viktor.core.linguistics import Linguistics
@@ -108,8 +109,38 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         ])]
 
     def search_help_block(self, message: str):
+        """Takes in a message and filters command descriptions for output
+
+        Examples:
+            >>> search help -g <group-name>
+            >>> search help -t <tag-name>
+        """
+        self.log.debug(f'Got help search command: {message}')
+        group = SlackInputParser.get_flag_from_command(message, flags=['g'], default=None)
+        tag = SlackInputParser.get_flag_from_command(message, flags=['t'], default=None)
+
+        if group is not None:
+            self.log.debug(f'Filtering on group: {group}')
+            filtered_by = f'group: {group}'
+            cmd_list = [x for x in self.commands if x.get('group', '') == group]
+        elif tag is not None:
+            self.log.debug(f'Filtering on tag: {tag}')
+            filtered_by = f'tag: {tag}'
+            cmd_list = [x for x in self.commands if tag in x.get('tags', [])]
+        else:
+            self.log.debug('Unable to filter on group or tag. Responding to user.')
+            return 'Unable to filter on commands without a tag or group. Please either include ' \
+                   '`-t <tag-name>` or `-g <group-name>`'
+
+        result = ''
+        for cmd_dict in cmd_list:
+            result += self.st.build_command_output(cmd_dict)
+
         # TODO: parse tag or group out of message
-        return 'Tag or group not found in message'
+        return [
+            BKitB.make_context_section(f'*`{len(cmd_list)}`* commands filtered by {filtered_by}'),
+            BKitB.make_block_section(result)
+        ]
 
     def generate_intro(self) -> List[Dict]:
         """Generates the intro message and feeds it in to the 'help' command"""
