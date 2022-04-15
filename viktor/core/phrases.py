@@ -233,13 +233,22 @@ class PhraseBuilders:
         """Handles processing the insult, compliment, phrase command and generating an appropriate response"""
         # Extract commands and other info from the message
         category_str, n_times, target = self._message_extractor(message=message, cmd=cmd, default_group='standard')
+        if n_times > 100:
+            n_times = 100
         # Attempt to find the
         category = getattr(ResponseCategory, category_str.upper(), ResponseCategory.STANDARD)
         # Extract all related words from db
+
         with self.eng.session_mgr() as session:
-            words = session.query(TableResponse).filter(and_(
-                TableResponse.type == ResponseType[cmd.upper()],
-                TableResponse.category == category
+            subq = session.query(
+                TableResponse.text,
+                func.row_number().over(partition_by=TableResponse.stage, order_by=func.random()).label('row_no')
+            ).filter(and_(
+                TableResponse.type == ResponseType.INSULT,
+                TableResponse.category == ResponseCategory.STANDARD
+            )).subquery()
+            words = session.query(subq).filter(and_(
+                subq.c.row_no <= n_times
             )).all()
             session.expunge_all()
 
@@ -247,11 +256,15 @@ class PhraseBuilders:
             return f'Unable to find a(n) {cmd} group for {category_str}'
         # Organize the words by stage
         # Build a dictionary of the query results, organized by stage
-        word_dict = self._word_result_organiser(word_results=words)
+        word_dict = {}  # type: Dict[int, List[str]]
+        for word in words:
+            if word.row_no in word_dict.keys():
+                word_dict[word.row_no].append(word.text)
+            else:
+                word_dict[word.row_no] = [word.text]
         # Use the word dict to randomly select words from each stage
-        word_lists = []  # type: List[List[str]]
-        for i in range(n_times):
-            word_lists.append(self._phrase_builder(word_dict=word_dict))
+        word_lists = list(word_dict.values())  # type: List[List[str]]
+
         # Build the phrases
         if cmd == 'insult':
 
