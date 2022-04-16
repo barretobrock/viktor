@@ -56,8 +56,9 @@ class PhraseBuilders:
         'he': ['him', 'he'],
         'ze': ['zir', 'hir'],
         'it': ['it'],
-        'we': ['we', 'us'],
-        'they': ['them', 'they']
+        'y\'all': ['us'],
+        'we': ['ourselves'],
+        'they': ['them', 'they', 'themselves']
     }
 
     def __init__(self, eng: ViktorPSQLClient):
@@ -150,7 +151,8 @@ class PhraseBuilders:
             _get_target("compliment that person on the street -g standard", "compliment")
             >>> "that person on the street"
         """
-        return SlackInputParser.parse_flags_from_command(message=message)['cmd'].replace(cmd_base, '').strip()
+        cmd = SlackInputParser.parse_flags_from_command(message=message)['cmd']
+        return re.sub(cmd_base, '', cmd).strip()
 
     @classmethod
     def _message_extractor(cls, message, cmd: str, default_group: str) -> Tuple[str, int, Optional[str]]:
@@ -229,23 +231,33 @@ class PhraseBuilders:
         guess_chunk = "\n_OR_\n".join(guesses)
         return f':robot-face: Here are my guesses for *`{acronym.upper()}`*!\n {guess_chunk}'
 
-    def _process_cmd_and_generate_response(self, cmd: str, message: str, user: str = None) -> str:
+    def _pronoun_objectifier(self, phrase: str) -> str:
+        """Scans a string for pronouns and converts them to objects of a verb, if needed"""
+        new_phrase = []
+        for word in re.split(r'\W+', phrase):
+            if word in sum(self.pronoun_direction.values(), []):
+                word = next(iter([k for k, v in self.pronoun_direction.items() if word in v]))
+            new_phrase.append(word)
+        return ' '.join(new_phrase).strip()
+
+    def _process_cmd_and_generate_response(self, cmd: str, message: str, match_pattern: str, user: str = None) -> str:
         """Handles processing the insult, compliment, phrase command and generating an appropriate response"""
         # Extract commands and other info from the message
-        category_str, n_times, target = self._message_extractor(message=message, cmd=cmd, default_group='standard')
+        category_str, n_times, target = self._message_extractor(message=message, cmd=match_pattern,
+                                                                default_group='standard')
         if n_times > 100:
             n_times = 100
-        # Attempt to find the
+        # Attempt to find the response type and category
+        resp_type = getattr(ResponseType, cmd.upper(), ResponseType.COMPLIMENT)
         category = getattr(ResponseCategory, category_str.upper(), ResponseCategory.STANDARD)
-        # Extract all related words from db
 
         with self.eng.session_mgr() as session:
             subq = session.query(
                 TableResponse.text,
                 func.row_number().over(partition_by=TableResponse.stage, order_by=func.random()).label('row_no')
             ).filter(and_(
-                TableResponse.type == ResponseType.INSULT,
-                TableResponse.category == ResponseCategory.STANDARD
+                TableResponse.type == resp_type,
+                TableResponse.category == category
             )).subquery()
             words = session.query(subq).filter(and_(
                 subq.c.row_no <= n_times
@@ -282,18 +294,11 @@ class PhraseBuilders:
                 '!',
                 ' ayyyy!!'
             ]
-            if target in sum(self.pronoun_direction.values(), []):
-                # Using pronouns. Try to be smart about this!
-                new_target = []
-                for word in target.split(' '):
-                    if word in sum(self.pronoun_direction.values(), []):
-                        word = next(iter([k for k, v in self.pronoun_direction.items() if word in v]))
-                    new_target.append(word)
-                target = ' '.join(new_target).capitalize()
-            elif '@' in target:
+
+            if '@' in target:
                 target = f'{target.upper()}'
             else:
-                target = target.capitalize()
+                target = self._pronoun_objectifier(target).capitalize()
             txt = f"{target} {choice(insult_head)} {' and a '.join([' '.join(x) for x in word_lists])}" \
                   f"{choice(insult_tail)}"
         elif cmd == 'phrase':
@@ -308,14 +313,14 @@ class PhraseBuilders:
         elif cmd == 'compliment':
             if target in sum(self.pronoun_direction.values(), []):
                 # Maybe we'll circle back here later and use a smarter way of dealing with pronouns
-                txt = f"Dear Asshole, {' and '.join([' '.join(x) for x in word_lists])} Viktor."
+                txt = f"Dear Asshole,\n\t {' and '.join([' '.join(x) for x in word_lists])} \nViktor."
             else:
-                txt = f"Dear {target.title()},\n\t {' and '.join([' '.join(x) for x in word_lists])} <@{user}>"
+                txt = f"Dear {target.title()},\n\t {' and '.join([' '.join(x) for x in word_lists])} \n <@{user}>"
         else:
             txt = 'boop......booop.........................boooooooooop    :party-dead:'
         return re.sub(r'(?<=[\w:.,!?()]) (?=[:.,!?()])', '', txt)
 
-    def insult(self, message: str) -> str:
+    def insult(self, message: str, match_pattern: str) -> str:
         """Insults the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
@@ -324,19 +329,20 @@ class PhraseBuilders:
             # Generate better insult
             return self.get_evil_insult()
 
-        return self._process_cmd_and_generate_response(cmd='insult', message=message)
+        return self._process_cmd_and_generate_response(cmd='insult', message=message, match_pattern=match_pattern)
 
-    def phrase_generator(self, message: str) -> str:
+    def phrase_generator(self, message: str, match_pattern: str) -> str:
         """Generates a phrase based on a table of work fragments"""
-        return self._process_cmd_and_generate_response(cmd='phrase', message=message)
+        return self._process_cmd_and_generate_response(cmd='phrase', message=message, match_pattern=match_pattern)
 
-    def compliment(self, message: str, user: str) -> str:
+    def compliment(self, message: str, match_pattern: str, user: str) -> str:
         """Compliments the user at their request"""
         message_split = message.split()
         if len(message_split) <= 1:
             return "I can't work like this! I need a target to compliment!!:ragetype:"
 
-        return self._process_cmd_and_generate_response(cmd='compliment', message=message, user=user)
+        return self._process_cmd_and_generate_response(cmd='compliment', message=message,
+                                                       match_pattern=match_pattern, user=user)
 
     @staticmethod
     def get_evil_insult() -> Optional[str]:
