@@ -58,9 +58,6 @@ def handle_cron_new_potential_emojis():
     Set this url so it is accessed with crontab such:
         0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/new-potential-emojis
     """
-    mainapp.logg('Beginning emoji scraping...')
-    scrape_emojis(psql_engine=mainapp.eng, log=mainapp.logg)
-
     mainapp.logg.debug('Beginning new potential emoji report...')
     interval = (datetime.now() - timedelta(hours=3))
     with mainapp.eng.session_mgr() as session:
