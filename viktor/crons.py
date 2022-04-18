@@ -7,6 +7,7 @@ from flask import (
     Blueprint,
     make_response
 )
+from sqlalchemy.sql import func
 from slacktools.block_kit import BlockKitBuilder as BKitB
 from viktor.model import (
     TableEmoji,
@@ -14,7 +15,6 @@ from viktor.model import (
     TableSlackUser,
     TableSlackUserChangeLog
 )
-from viktor.core.emoji_scraper import scrape_emojis
 import viktor.app as mainapp
 from viktor.logg import get_base_logger
 
@@ -85,8 +85,13 @@ def handle_cron_new_potential_emojis():
             mainapp.Bot.st.send_message(channel=mainapp.Bot.emoji_channel, message='New Potential Emoji report!',
                                         blocks=blocks[i: i + 50])
     else:
+        with mainapp.eng.session_mgr() as session:
+            random_emoji = session.query(TableEmoji).order_by(func.random()).limit(1).one_or_none()
+            session.expunge(random_emoji)
+        random_emoji: TableEmoji
         blocks = [
-            BKitB.make_context_section('No new potential emojis detected this day.')
+            BKitB.make_context_section(f'No new potential emojis detected this run Here\'s '
+                                       f'a random emoji: :{random_emoji.name}:')
         ]
         mainapp.Bot.st.send_message(channel=mainapp.Bot.emoji_channel, message='New Potential Emoji report',
                                     blocks=blocks)
