@@ -52,6 +52,7 @@ bot_events = SlackEventAdapter(vik_creds.signing_secret, "/api/events", app)
 
 
 @app.route('/api/actions', methods=['GET', 'POST'])
+@logg.catch
 def handle_action():
     """Handle a response when a user clicks a button from a form Slack"""
     event_data = json.loads(request.form["payload"])
@@ -101,6 +102,7 @@ def handle_action():
 
 
 @bot_events.on('reaction_added')
+@logg.catch
 def reaction(event_data: dict):
     event = event_data['event']
     user = event.get('user')
@@ -151,11 +153,13 @@ def reaction(event_data: dict):
 
 
 @bot_events.on('message')
+@logg.catch
 def scan_message(event_data: dict):
     Bot.process_event(event_data)
 
 
 @app.route('/api/slash', methods=['GET', 'POST'])
+@logg.catch
 def handle_slash():
     """Handles a slash command"""
     event_data = request.form
@@ -167,6 +171,7 @@ def handle_slash():
 
 
 @bot_events.on('emoji_changed')
+@logg.catch
 def record_new_emojis(event_data):
     event = event_data['event']
     # Make a post about a new emoji being added in the #emoji_suggestions channel
@@ -192,6 +197,7 @@ def record_new_emojis(event_data):
 
 
 @bot_events.on('pin_added')
+@logg.catch
 def store_pins(event_data):
     event = event_data['event']
     tbl_obj = collect_pins(event, psql_client=eng, log=logg)
@@ -203,6 +209,7 @@ def store_pins(event_data):
 
 
 @bot_events.on('pin_removed')
+@logg.catch
 def remove_pins(event_data):
     event = event_data['event']
     tbl_obj = collect_pins(event, psql_client=eng, log=logg)
@@ -217,6 +224,7 @@ def remove_pins(event_data):
 
 
 @bot_events.on('user_change')
+@logg.catch
 def notify_new_statuses(event_data):
     """Triggered when a user updates their profile info. Gets saved to global dict
     where we then report it in #general"""

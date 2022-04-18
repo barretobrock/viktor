@@ -22,6 +22,7 @@ cron = Blueprint('cron', __name__)
 
 
 @cron.route('/new-emojis', methods=['POST'])
+@mainapp.logg.catch
 def handle_cron_new_emojis():
     """Check for newly uploaded emojis (triggered by cron task that sends POST req every 60m mins)
 
@@ -52,6 +53,7 @@ def handle_cron_new_emojis():
 
 
 @cron.route('/new-potential-emojis', methods=['POST'])
+@mainapp.logg.catch
 def handle_cron_new_potential_emojis():
     """Daily check for new potential emojis (triggered by cron task that sends POST req every 10 mins)
 
@@ -90,6 +92,7 @@ def handle_cron_new_potential_emojis():
 
 
 @cron.route("/profile-update", methods=['POST'])
+@mainapp.logg.catch
 def handle_cron_profile_update():
     """Check for newly updated profile elements (triggered by cron task that sends POST req every 1 hr)"""
     # Check emojis uploaded (every 60 mins)
@@ -169,6 +172,7 @@ def handle_cron_profile_update():
 
 
 @cron.route("/reacts", methods=['POST'])
+@mainapp.logg.catch
 def handle_cron_reacts():
     """Check for new reactions - if any, run through and react to them"""
     pass
