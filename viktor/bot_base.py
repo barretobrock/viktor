@@ -30,7 +30,6 @@ from slacktools import (
     BlockKitBuilder as BKitB
 )
 from slacktools.tools import build_commands
-from slacktools.slack_input_parser import SlackInputParser
 from loguru import logger
 from viktor import ROOT_PATH
 from viktor.core.linguistics import Linguistics
@@ -110,37 +109,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
     def search_help_block(self, message: str):
         """Takes in a message and filters command descriptions for output
-
-        Examples:
-            >>> search help -g <group-name>
-            >>> search help -t <tag-name>
         """
         self.log.debug(f'Got help search command: {message}')
-        group = SlackInputParser.get_flag_from_command(message, flags=['g'], default=None)
-        tag = SlackInputParser.get_flag_from_command(message, flags=['t'], default=None)
-
-        if group is not None:
-            self.log.debug(f'Filtering on group: {group}')
-            filtered_by = f'group: {group}'
-            cmd_list = [x for x in self.commands if x.get('group', '') == group]
-        elif tag is not None:
-            self.log.debug(f'Filtering on tag: {tag}')
-            filtered_by = f'tag: {tag}'
-            cmd_list = [x for x in self.commands if tag in x.get('tags', [])]
-        else:
-            self.log.debug('Unable to filter on group or tag. Responding to user.')
-            return 'Unable to filter on commands without a tag or group. Please either include ' \
-                   '`-t <tag-name>` or `-g <group-name>`'
-
-        result = ''
-        for cmd_dict in cmd_list:
-            result += self.st.build_command_output(cmd_dict)
-
-        # TODO: parse tag or group out of message
-        return [
-            BKitB.make_context_section(f'*`{len(cmd_list)}`* commands filtered by {filtered_by}'),
-            BKitB.make_block_section(result)
-        ]
+        return self.st.search_help_block(message=message)
 
     def generate_intro(self) -> List[Dict]:
         """Generates the intro message and feeds it in to the 'help' command"""
@@ -479,29 +450,63 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         now = datetime.now()
         diff = (now - wfh_epoch)
         wfh_secs = diff.total_seconds()
-        strange_units = {
-            'dog years_2': (wfh_secs / (60 * 60 * 24)) / 52,
-            'hollow months_2': wfh_secs / (60 * 60 * 24 * 29),
-            'fortnights_1': wfh_secs / (60 * 60 * 24 * 7 * 2),
-            'kilowarhols_1': wfh_secs / (60 * 15000),
-            'weeks_1': wfh_secs / (60 * 60 * 24 * 7),
-            'sols_1': wfh_secs / (60 * 60 * 24 + 2375),
-            'microcenturies_0': wfh_secs / (52 * 60 + 35.76),
-            'Kermits_1': wfh_secs / 60 / 14.4,
-            'moments_0': wfh_secs / 90,
-            'millidays_2': wfh_secs / 86.4,
-            'microfortnights_2': wfh_secs * 1.2096,
+        day_s = (60 * 60 * 24)
+
+        unit_dict = {
+            # NORMAl
+            'years': {
+                'val': wfh_secs / day_s / 365,
+                'type': 'normal'
+            },
+            'weeks': {
+                'val': wfh_secs / (day_s * 7),
+                'type': 'normal'
+            },
+            'days': {
+                'val': wfh_secs / day_s,
+                'type': 'normal'
+            },
+
+            # STRANGE
+            'lustrum': {
+                # 5 years
+                'val': wfh_secs / day_s / 365 / 5,
+                'type': 'strange'
+            },
+            'martian roundtrips': {
+                # 9 months to get there, 3 months to wait for better alignment, 9 months to travel back
+                'val': wfh_secs / day_s / 30 / 21,
+                'type': 'strange'
+            },
+            'quarantines': {
+                # 40 days
+                'val': wfh_secs / day_s / 40,
+                'type': 'strange'
+            },
+            'megaseconds': {
+                # 1 million seconds
+                'val': wfh_secs / 1000000,
+                'type': 'strange'
+            },
+            'mileways': {
+                # 20 mins; the period it took in Middle Ages to typically travel a mile
+                'val': wfh_secs / (20 * 60),
+                'type': 'strange'
+            },
         }
 
-        units = []
-        for k, v in strange_units.items():
-            unit, decimals = k.split('_')
-            decimals = int(decimals)
-            base_txt = f',.{decimals}f'
-            txt = '`{{:<20}} {{:>15{}}}`'.format(base_txt).format(f'{unit.title()}:', v)
-            units.append(txt)
+        normal_section = []
+        strange_section = []
+        for k, v in unit_dict.items():
+            val = v['val']
+            dec = 1 if val > 30 else 2
+            base_txt = f',.{dec}f'
+            formatted = '`{{:<20}} {{:>15{}}}`'.format(base_txt).format(f'{k.title()}:', val)
+            if v.get('type') == 'normal':
+                normal_section.append(formatted)
+            else:
+                strange_section.append(formatted)
 
-        unit_txt = '\n'.join(units)
         return [
             BKitB.make_context_section([
                 BKitB.markdown_section('WFH Epoch')
@@ -510,9 +515,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 f'Current WFH epoch time is *`{wfh_secs:.0f}`*.'
                 f'\n ({diff})',
             ),
-            BKitB.make_context_section([
-                BKitB.markdown_section(f'{unit_txt}')
-            ])
+            BKitB.make_context_section('The time units you\'re used to\n' + '\n'.join(normal_section)),
+            BKitB.make_context_section('Some time units that might be strange to you\n' +
+                                       '\n'.join(strange_section)),
         ]
 
     # Misc. methods
