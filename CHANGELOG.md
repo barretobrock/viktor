@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.8] - 2022-04-18
+#### Added
+ - error catching to API endpoints
+ 
 ### [1.6.7] - 2022-04-18
 #### Changed
  - Removed emoji scraper into own crontab-able script
