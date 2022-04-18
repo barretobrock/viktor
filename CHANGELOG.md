@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.6] - 2022-04-18
+#### Fixed
+ - Potential emoji report wasn't performing the emoji scraping part
+ 
 ### [1.6.5] - 2022-04-18
 #### Added
  - help search functionality

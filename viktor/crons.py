@@ -14,6 +14,7 @@ from viktor.model import (
     TableSlackUser,
     TableSlackUserChangeLog
 )
+from viktor.core.emoji_scraper import scrape_emojis
 import viktor.app as mainapp
 
 
@@ -57,13 +58,16 @@ def handle_cron_new_potential_emojis():
     Set this url so it is accessed with crontab such:
         0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/new-potential-emojis
     """
+    mainapp.logg('Beginning emoji scraping...')
+    scrape_emojis(psql_engine=mainapp.eng, log=mainapp.logg)
+
     mainapp.logg.debug('Beginning new potential emoji report...')
-    interval = (datetime.now() - timedelta(days=1))
+    interval = (datetime.now() - timedelta(hours=3))
     with mainapp.eng.session_mgr() as session:
         new_potential_emojis = session.query(TablePotentialEmoji).filter(
             TablePotentialEmoji.created_date >= interval).all()
         session.expunge_all()
-    mainapp.logg.debug(f'{len(new_potential_emojis)} emojis found.')
+    mainapp.logg.debug(f'{len(new_potential_emojis)} new potential emojis pulled from db.')
     if len(new_potential_emojis) > 0:
         blocks = [
             BKitB.make_context_section('New Potential Emojis :postal_horn::postal_horn::postal_horn:')
