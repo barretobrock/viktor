@@ -20,13 +20,19 @@ commands:
         ^help:
             tags:
                 - support
-            desc: Description of all the commands I respond to
+                - main
+            desc: Description of the main commands I respond to, along with other groups and tags to search my other commands
             response-cmd:
                 callable: generate_intro
-        ^search help:
+        ^(search\s?help|shelp):
             tags:
                 - support
+                - main
             desc: Search the command descriptions by tag or group
+            examples:
+                - search help -t support
+                - search help -g okr
+                - shelp -g okr
             response-cmd:
                 callable: search_help_block
                 args:
@@ -34,6 +40,7 @@ commands:
         ^about:
             tags:
                 - debug
+                - main
             desc: Bootup time of Viktor's current instance, his current version and last update date
             response-cmd:
                 callable: get_bootup_msg
@@ -41,7 +48,12 @@ commands:
             tags:
                 - ui
                 - settings
+                - main
             desc: Wiktor's wain wenu
+            examples:
+                - mm
+                - main menu
+                - mainmenu
             response-cmd:
                 callable: prebuild_main_menu
                 args:
@@ -101,6 +113,7 @@ commands:
         ^wfh\s?(time|epoch):
             tags:
                 - tow
+                - main
             desc: Prints the current WFH epoch time
             response-cmd:
                 callable: wfh_epoch
@@ -335,6 +348,7 @@ commands:
                 callable: insult
                 args:
                     - message
+                    - match_pattern
         ^phrases?:
             tags:
                 - random
@@ -346,6 +360,7 @@ commands:
                 callable: phrase_generator
                 args:
                     - message
+                    - match_pattern
         ^compliment:
             tags:
                 - random
@@ -356,6 +371,7 @@ commands:
                 callable: compliment
                 args:
                     - raw_message
+                    - match_pattern
                     - user
         ^facts?:
             tags:

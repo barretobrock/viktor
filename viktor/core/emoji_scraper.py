@@ -13,16 +13,18 @@ def scrape_emojis(psql_engine: ViktorPSQLClient, log: logger):
 
     emoji_list = xpath_extractor.xpath('//ul[@class="emojis"]', single=True)
     emojis = emoji_list.getchildren()
+    log.debug(f'Found {len(emojis)} potential emojis to scan')
 
     # Get a list of ids (tracked by the site) of the past emojis we've collected
     with psql_engine.session_mgr() as session:
         prev_emoji_ids = [x.data_emoji_id for x in session.query(TablePotentialEmoji).
                           order_by(TablePotentialEmoji.data_emoji_id).limit(250).all()]
+    log.debug(f'Extracted {len(prev_emoji_ids)} of the most recent previous emoji ids to compare against.')
 
     new_emojis = []
     for emoji in emojis:
         emo_id = emoji.getchildren()[0].get('data-emoji-id')
-        emo_name = emoji.getchildren()[0].getchildren()[1].text.strip()
+        emo_name = emoji.getchildren()[0].getchildren()[1].text.strip().replace(':', '')
         if emo_id not in prev_emoji_ids:
             # Get link and add to the id list
             emo_link = emoji.findall('.//img')[0].get('src')
@@ -34,5 +36,9 @@ def scrape_emojis(psql_engine: ViktorPSQLClient, log: logger):
                                         link=emo_link)
                 )
     # Add the emojis to the table
-    with psql_engine.session_mgr() as session:
-        session.add_all(new_emojis)
+    if len(new_emojis) > 0:
+        log.debug(f'Adding {len(new_emojis)} new potential emojis to the db.')
+        with psql_engine.session_mgr() as session:
+            session.add_all(new_emojis)
+    else:
+        log.debug('No new emojis found to upload.')

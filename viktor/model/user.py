@@ -23,6 +23,7 @@ class TableSlackUser(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
     status_emoji = Column(VARCHAR(150))
     status_title = Column(VARCHAR(255))
+    what_i_do = Column(VARCHAR(255))
     role_title = Column(TEXT)
     role_desc = Column(TEXT)
     level = Column(Float(32), default=0, nullable=False)
@@ -33,7 +34,7 @@ class TableSlackUser(Base):
     def __init__(self, slack_user_hash: str, real_name: str, display_name: str, is_admin: bool = False,
                  role_title: str = None, role_desc: str = None, level: float = 0., ltits: float = 0.,
                  avatar_link: str = None, status_emoji: str = None, status_title: str = None,
-                 slack_bot_hash: str = None, **kwargs):
+                 what_i_do: str = None, slack_bot_hash: str = None, **kwargs):
         self.slack_user_hash = slack_user_hash
         self.slack_bot_hash = slack_bot_hash
         self.real_name = real_name
@@ -46,9 +47,18 @@ class TableSlackUser(Base):
         self.avatar_link = avatar_link
         self.status_emoji = status_emoji
         self.status_title = status_title
+        self.what_i_do = what_i_do
 
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+    def get_status(self) -> str:
+        status = ''
+        if self.status_emoji is not None:
+            status += self.status_emoji
+        if self.status_title is not None:
+            status += self.status_title
+        return status
 
     def __repr__(self) -> str:
         return f'<TableSlackUser(name={self.real_name}, display_name={self.display_name}, level={self.level}, ' \
@@ -65,13 +75,14 @@ class TableSlackUserChangeLog(Base):
     display_name = Column(VARCHAR(120))
     status_emoji = Column(VARCHAR(150))
     status_title = Column(VARCHAR(255))
+    what_i_do = Column(VARCHAR(255))
     role_title = Column(TEXT)
     role_desc = Column(TEXT)
     avatar_link = Column(VARCHAR(255))
 
     def __init__(self, real_name: str = None, display_name: str = None, status_title: str = None,
                  status_emoji: str = None, role_title: str = None,
-                 role_desc: str = None, avatar_link: str = None, **kwargs):
+                 role_desc: str = None, avatar_link: str = None, what_i_do: str = None, **kwargs):
         self.real_name = real_name
         self.display_name = display_name
         self.status_emoji = status_emoji
@@ -79,6 +90,7 @@ class TableSlackUserChangeLog(Base):
         self.role_title = role_title
         self.role_desc = role_desc
         self.avatar_link = avatar_link
+        self.what_i_do = what_i_do
 
         for k, v in kwargs.items():
             setattr(self, k, v)

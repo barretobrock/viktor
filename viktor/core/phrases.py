@@ -311,6 +311,7 @@ class PhraseBuilders:
                 processed = [' '.join(x) for x in word_lists]
             txt = '. '.join([x.strip().capitalize() for x in f'{" ".join(processed)}'.split('.')])
         elif cmd == 'compliment':
+            target = self._pronoun_objectifier(target)
             if target in sum(self.pronoun_direction.values(), []):
                 # Maybe we'll circle back here later and use a smarter way of dealing with pronouns
                 txt = f"Dear Asshole,\n\t {' and '.join([' '.join(x) for x in word_lists])} \nViktor."

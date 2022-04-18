@@ -15,6 +15,15 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.5] - 2022-04-18
+#### Added
+ - help search functionality
+ - user info update broken out so procedure can be shared (to be implemented later)
+ - potential emojis logging endpoint
+#### Changed
+ - `wfhtime` broken out into standard and nonstandard time increments for sanity
+ - cron jobs API broken out into own file via blueprint
+ 
 ### [1.6.4] - 2022-04-15
 #### Added
  - built-out command search logic 

@@ -1,10 +1,7 @@
 import json
 import signal
 import requests
-from datetime import (
-    datetime,
-    timedelta
-)
+from datetime import datetime
 from flask import (
     Flask,
     request,
@@ -16,21 +13,18 @@ from sqlalchemy.sql import (
     not_
 )
 from slackeventsapi import SlackEventAdapter
-from slacktools import (
-    SecretStore,
-    BlockKitBuilder as BKitB
-)
+from slacktools.secretstore import SecretStore
 from viktor.db_eng import ViktorPSQLClient
 from viktor.model import (
     TableEmoji,
-    TableSlackUser,
-    TableSlackUserChangeLog,
     TableQuote
 )
 from viktor.settings import auto_config
 from viktor.core.pin_collector import collect_pins
+from viktor.core.user_changes import extract_user_change
 from viktor.logg import get_base_logger
 from viktor.bot_base import Viktor
+from viktor.crons import cron
 
 bot_name = auto_config.BOT_NICKNAME
 logg = get_base_logger()
@@ -42,6 +36,8 @@ vik_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Starting up app...')
 app = Flask(__name__)
+app.register_blueprint(cron, url_prefix='/cron')
+
 eng = ViktorPSQLClient(props=conn_dict, parent_log=logg)
 
 logg.debug('Instantiating bot...')
@@ -102,135 +98,6 @@ def handle_action():
 
     # Send HTTP 200 response with an empty body so Slack knows we're done
     return make_response('', 200)
-
-
-@app.route("/cron/new-emojis", methods=['POST'])
-def handle_cron_new_emojis():
-    """Check for newly uploaded emojis (triggered by cron task that sends POST req every 10 mins)"""
-    # Check emojis uploaded (every 60 mins)
-    # This url is hit in crontab as such:
-    #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/new-emojis
-    logg.debug('Beginning new emoji report...')
-    now = datetime.now()
-    interval = (now - timedelta(minutes=60))
-    with eng.session_mgr() as session:
-        new_emojis = session.query(TableEmoji).filter(TableEmoji.created_date >= interval).all()
-        session.expunge_all()
-    logg.debug(f'{len(new_emojis)} emojis found.')
-    if len(new_emojis) > 0:
-        # Go about notifying channel of newly uploaded emojis
-        emojis = [f':{x.name}:' for x in new_emojis]
-        emoji_str = ''
-        for i in range(0, len(emojis), 10):
-            emoji_str += f"{''.join(emojis[i:i + 10])}\n"
-        msg_block = [
-            BKitB.make_context_section([
-                BKitB.markdown_section('Incoming emojis that were added in the last 60 min!')
-            ]),
-        ]
-        Bot.st.send_message(Bot.emoji_channel, 'new emoji report', blocks=msg_block)
-        Bot.st.send_message(Bot.emoji_channel, emoji_str)
-    return make_response('', 200)
-
-
-@app.route("/cron/profile-update", methods=['POST'])
-def handle_cron_profile_update():
-    """Check for newly updated profile elements (triggered by cron task that sends POST req every 1 hr)"""
-    # Check emojis uploaded (every 60 mins)
-    # This url is hit in crontab as such:
-    #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/profile-update
-    logg.debug('Beginning updated profile report...')
-    # TODO: Methodology...
-    #   since Slack pushes a /user_change event for every minor change, we should wait before logging that change
-    #   so what we'll do here is, every hour, compare what's in the users table against what's in the change log.
-    #   We should also expect the situation that the user doesn't appear in the change log, and if that happens,
-    #   have an option to 'mute' the announcement for that user.
-
-    # These are attributes to keep track of
-    attrs = [
-        'real_name',
-        'display_name',
-        'status_emoji',
-        'status_title',
-        'role_title',
-        'role_desc',
-        'avatar_link'
-    ]
-    updated_users = []
-    with eng.session_mgr() as session:
-        users = session.query(TableSlackUser).all()
-
-        user: TableSlackUser
-        for user in users:
-            logg.debug(f'Working on user id: {user.user_id}')
-            most_recent_changelog = session.query(TableSlackUserChangeLog).filter(
-                TableSlackUserChangeLog.user_key == user.user_id
-            ).order_by(TableSlackUserChangeLog.created_date.desc()).limit(1).one_or_none()
-            if most_recent_changelog is None:
-                # Record the user details without comparison - this is the first instance encountering this user
-                logg.debug('Recording user details to changelog - no past changelog entry')
-                attr_dict = {k: user.__dict__.get(k) for k in attrs}
-                session.add(TableSlackUserChangeLog(user_key=user.user_id, **attr_dict))
-            else:
-                # Begin comparing to find what's new
-                logg.debug('Comparing user details to most recent changelog entry')
-                change_dict = {'user_hashname': f'{user.display_name}|{user.slack_user_hash}'}
-                for attr in attrs:
-                    last_chglog = most_recent_changelog.__dict__.get(attr)
-                    cur_user = user.__dict__.get(attr)
-                    if last_chglog != cur_user:
-                        change_dict[attr] = {
-                            'old': last_chglog,
-                            'new': cur_user
-                        }
-                if len(change_dict) > 1:
-                    logg.debug(f'Changes detected for {user.display_name}({user.user_id})')
-                    # Update the changelog
-                    attr_dict = {k: user.__dict__.get(k) for k in attrs}
-                    session.add(TableSlackUserChangeLog(user_key=user.user_id, **attr_dict))
-                    updated_users.append(change_dict)
-    # Now work on splitting the new/old info into a message
-    for updated_user in updated_users:
-        blocks = [
-            BKitB.make_context_section(f'*`{updated_user["user_hashname"]}`* '
-                                       f'changed their profile info recently!'),
-            BKitB.make_block_divider()
-        ]
-        for attr in attrs:
-            if attr not in updated_user.keys():
-                continue
-            blocks += [
-                BKitB.make_context_section(attr.title()),
-                BKitB.make_block_section(
-                    f"NEW:\n\t{updated_user.get(attr).get('new')}\n\n"
-                    f"OLD:\n\t{updated_user.get(attr).get('old')}"),
-                BKitB.make_block_divider()
-            ]
-        Bot.st.send_message(channel=Bot.general_channel, message='user profile update!', blocks=blocks)
-
-    return make_response('', 200)
-
-
-@app.route("/cron/reacts", methods=['POST'])
-def handle_cron_reacts():
-    """Check for new reactions - if any, run through and react to them"""
-    pass
-    # Check reactions (every 5 mins)
-    # This url is hit in crontab as such:
-    #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/reacts
-    # logg.debug(f'Handling new reacts from {hour_ago}...')
-    # reacts = Bot.state_store.get('reacts', {})
-    # if len(reacts) > 0:
-    #     # Begin reacting to new reactions
-    #     logg.debug(f'{len(reacts)} reacts found.')
-    #     with eng.session_mgr() as session:
-    #         emojis = session.query(TableEmoji).filter(TableEmoji.created_date >= hour_ago).all()
-    #         session.expunge_all()
-    #     for item in Bot.state_store.get('reacts'):
-    #         logg.debug(f'Channel|timestamp: {item}')
-    #         chan, ts = item.split('|')
-    #         Bot.bot.reactions_add(name=choice(emojis), channel=chan, timestamp=ts)
-    # return make_response('', 200)
 
 
 @bot_events.on('reaction_added')
@@ -355,43 +222,4 @@ def notify_new_statuses(event_data):
     where we then report it in #general"""
     event = event_data['event']
     user_info = event['user']
-    uid = user_info['id']
-    # Look up user in db
-    user_obj = eng.get_user_from_hash(user_hash=uid)
-    logg.debug(f'User change detected for {uid}')
-    if user_obj is None:
-        logg.warning(f'Couldn\'t find user: {uid} \n {user_info}')
-        return
-
-    # get display name
-    profile = user_info.get('profile')
-    display_name = profile.get('display_name')
-    real_name = profile.get('real_name')
-    status_emoji = profile.get('status_emoji', '')
-    status_title = profile.get('status_text', '')
-    avi_link = profile.get('image_512')
-    if any([
-        user_obj.display_name != display_name,
-        user_obj.real_name != real_name,
-        user_obj.status_emoji != status_emoji,
-        user_obj.status_title != status_title,
-        user_obj.avatar_link != avi_link
-    ]):
-        # Update the user
-        with eng.session_mgr() as session:
-            session.add(user_obj)
-            user_obj.real_name = real_name
-            user_obj.display_name = display_name
-            user_obj.avatar_link = avi_link
-            user_obj.status_emoji = status_emoji
-            user_obj.status_title = status_title
-        logg.debug(f'User {display_name} updated in db.')
-
-    # if uid in Bot.users_dict.keys():
-    #     # Get what info we've already stored on the user
-    #     current_user_dict = Bot.users_dict[uid]
-    #     # Get the user's newly updated dict
-    #     new_user_dict = Bot.st.clean_user_info(user_info)
-    #
-    #     # Add updated to our updates dict
-    #     Bot.user_updates_dict[uid] = {k: v for k, v in zip(['old', 'new'], [current_user_dict, new_user_dict])}
+    extract_user_change(eng=eng, user_info_dict=user_info, log=logg)
