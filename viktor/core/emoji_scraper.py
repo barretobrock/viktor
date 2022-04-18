@@ -18,12 +18,17 @@ def scrape_emojis(psql_engine: ViktorPSQLClient, log: logger):
     # Get a list of ids (tracked by the site) of the past emojis we've collected
     with psql_engine.session_mgr() as session:
         prev_emoji_ids = [x.data_emoji_id for x in session.query(TablePotentialEmoji).
-                          order_by(TablePotentialEmoji.data_emoji_id).limit(250).all()]
+                          order_by(TablePotentialEmoji.created_date.desc()).limit(250).all()]
     log.debug(f'Extracted {len(prev_emoji_ids)} of the most recent previous emoji ids to compare against.')
 
     new_emojis = []
     for emoji in emojis:
         emo_id = emoji.getchildren()[0].get('data-emoji-id')
+        try:
+            emo_id = int(emo_id)
+        except ValueError:
+            log.warning(f'Wasn\'t able to convert this emoji id into integer: "{emo_id}"')
+            continue
         emo_name = emoji.getchildren()[0].getchildren()[1].text.strip().replace(':', '')
         if emo_id not in prev_emoji_ids:
             # Get link and add to the id list
