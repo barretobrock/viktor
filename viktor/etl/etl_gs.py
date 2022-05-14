@@ -61,7 +61,7 @@ class ETL:
     # Prevent automated activity from occurring in these channels
     DENY_LIST_CHANNELS = [IMPO_CHANNEL, CAH_CHANNEL]
 
-    def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True):
+    def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
         self.log = logger.bind(sink=sys.stdout, level='DEBUG')
         self.log.debug('Obtaining credential file...')
         credstore = SecretStore('secretprops-davaiops.kdbx')
@@ -85,9 +85,10 @@ class ETL:
 
         self.log.debug('Authenticating credentials for services...')
         vik_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
-        self.gsr = GSheetAgent(sec_store=credstore, sheet_key=vik_creds.spreadsheet_key)
-        self.st = SlackTools(bot_cred_entry=vik_creds, parent_log=self.log, use_session=False)
-        self.log.debug('Completed loading services')
+        if incl_services:
+            self.gsr = GSheetAgent(sec_store=credstore, sheet_key=vik_creds.spreadsheet_key)
+            self.st = SlackTools(bot_cred_entry=vik_creds, parent_log=self.log, use_session=False)
+            self.log.debug('Completed loading services')
 
     def etl_bot_settings(self):
         self.log.debug('Working on settings...')
@@ -320,7 +321,7 @@ class ETL:
 
 if __name__ == '__main__':
     from viktor.model import TableResponse
-    # etl = ETL(tables=ETL.ALL_TABLES, env='dev')
+    etl = ETL(tables=ETL.ALL_TABLES, env='dev')
     # etl.etl_acronyms()
     # etl.etl_emojis()
     # etl.etl_okr_perks()
@@ -329,4 +330,4 @@ if __name__ == '__main__':
     # etl.etl_quotes()
     # etl.etl_responses()
     # etl.etl_bot_settings()
-    etl = ETL(tables=[TablePotentialEmoji], env='prod', drop_all=False)
+    # etl = ETL(tables=[TablePotentialEmoji], env='prod', drop_all=False)
