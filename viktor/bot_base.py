@@ -154,7 +154,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         """Handles an incoming action (e.g., when a button is clicked)"""
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
-        self.log.debug(f'Receiving action_id: {action_id} and value: {action_value}')
+        self.log.debug(f'Receiving action_id: {action_id} and value: {action_value} from user: {user} in '
+                       f'channel: {channel}')
 
         if 'buttongame' in action_id:
             # Button game stuff
@@ -230,7 +231,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 msg_text = msg.get('text')
                 if blocks is not None:
                     for i, block in enumerate(blocks):
-                        replaced_blocks.append(recursive_uwu(i, block, replace_func=PhraseBuilders.uwu))
+                        replaced_blocks.append(recursive_uwu(i, block, replace_func=self.uwu))
                     # Send message
                     try:
                         self.st.send_message(channel, message='uwu',
