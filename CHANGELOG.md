@@ -15,6 +15,15 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.9] - 2022-05-14
+#### Added
+ - Table transfer script
+ - Response in thread now supported
+#### Changed
+ - Completed upgrade to Python 3.10
+#### Fixed
+ - Action shortcuts can now be properly called
+ 
 ### [1.6.8] - 2022-04-18
 #### Added
  - error catching to API endpoints

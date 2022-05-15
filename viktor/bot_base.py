@@ -8,6 +8,7 @@ import requests
 from datetime import datetime
 from types import SimpleNamespace
 from typing import (
+    Callable,
     List,
     Optional,
     Union,
@@ -154,6 +155,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         """Handles an incoming action (e.g., when a button is clicked)"""
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
+        msg = event_dict.get('message')
+        thread_ts = msg.get('thread_ts')
         self.log.debug(f'Receiving action_id: {action_id} and value: {action_value} from user: {user} in '
                        f'channel: {channel}')
 
@@ -164,7 +167,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 game_value = int(game_value) - 5000
                 resp = self.update_user_ltips(channel, self.approved_users[0], target_user=user, ltits=game_value)
                 if resp is not None:
-                    self.st.send_message(channel, resp)
+                    self.st.send_message(channel, resp, thread_ts=thread_ts)
         elif action_id == 'new-ifact':
             self.add_ifact(user=user, channel=channel, txt=action_value)
         elif action_id == 'new-role-p1':
@@ -189,7 +192,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 self.state_store['new-ltit-req'] = new_ltit_req
             tgt_user_obj = self.eng.get_user_from_hash(action_dict.get('selected_user'))
             form_p2 = self.build_update_user_ltits_form_p2(tgt_user_obj.ltits)
-            self.st.send_message(channel=channel, message='LTITs form p2', blocks=form_p2)
+            self.st.send_message(channel=channel, message='LTITs form p2', blocks=form_p2, thread_ts=thread_ts)
         elif action_id == 'ltits-user-p2':
             target_user = self.state_store['new-ltit-req'].get(user)
             # Convert the value into a number
@@ -197,7 +200,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             if ltits is None:
                 # No number provided.
                 self.st.send_message(channel=channel,
-                                     message=f'Can\'t find a number from this input: `{action_value}`')
+                                     message=f'Can\'t find a number from this input: `{action_value}`',
+                                     thread_ts=thread_ts)
                 return None
             ltits = ltits.group()
             try:
@@ -205,7 +209,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             except ValueError:
                 # Number was bad format
                 self.st.send_message(channel=channel,
-                                     message=f'Parsed number is bad format for float covnersion: `{ltits}`')
+                                     message=f'Parsed number is bad format for float conversion: `{ltits}`',
+                                     thread_ts=thread_ts)
                 return None
             self.update_user_ltips(channel=channel, requesting_user=user, target_user=target_user, ltits=ltits)
         elif action_id == 'new-emoji-p1':
@@ -224,47 +229,49 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             # Deal  with message shortcuts
             if action_id == 'uwu':
                 # Uwu the message
-                msg = event_dict.get('message')
-                replaced_blocks = []
-                blocks = msg.get('blocks')
-                channel = event_dict.get('channel').get('id')
-                msg_text = msg.get('text')
-                if blocks is not None:
-                    for i, block in enumerate(blocks):
-                        replaced_blocks.append(recursive_uwu(i, block, replace_func=self.uwu))
-                    # Send message
-                    try:
-                        self.st.send_message(channel, message='uwu',
-                                             blocks=replaced_blocks)
-                    except SlackApiError:
-                        # Most likely because the block was a standard rich text one, which isn't allowed.
-                        #   Fall back to basic text.
-                        self.st.send_message(channel, message=self.uwu(msg_text))
-                else:
-                    self.st.send_message(channel, message=self.uwu(msg_text))
+                self.handle_menu_action_msg_transform_and_send(event_dict=event_dict, funktsioon=self.uwu)
             elif action_id == 'emojiword':
-                # Uwu the message
-                msg = event_dict.get('message')
-                replaced_blocks = []
-                blocks = msg.get('blocks')
-                channel = event_dict.get('channel').get('id')
-                msg_text = msg.get('text')
-                if blocks is not None:
-                    for i, block in enumerate(blocks):
-                        replaced_blocks.append(recursive_uwu(i, block, replace_func=self.word_emoji))
-                    # Send message
-                    try:
-                        self.st.send_message(channel, message='word emoji',
-                                             blocks=replaced_blocks)
-                    except SlackApiError:
-                        # Most likely because the block was a standard rich text one, which isn't allowed.
-                        #   Fall back to basic text.
-                        self.st.send_message(channel, message=self.word_emoji(msg_text))
-                else:
-                    self.st.send_message(channel, message=self.word_emoji(msg_text))
+                # Emojiword the message
+                self.handle_menu_action_msg_transform_and_send(event_dict=event_dict, funktsioon=self.word_emoji)
+            elif action_id == 'mockthis':
+                # Mock the message
+                self.handle_menu_action_msg_transform_and_send(event_dict=event_dict, funktsioon=self.randcap)
         else:
             # TODO Otherwise treat the action as a phrase?
             pass
+
+    def handle_menu_action_msg_transform_and_send(self, event_dict: Dict, funktsioon: Callable):
+        """Stores the process to handle shortcuts through message menu to transform a message with a certain
+        algorithm
+
+        Args:
+            event_dict: the event dict constructed from a detected slack event
+            funktsioon: the function to call that handles the process of transforming the message.
+
+        """
+        # Extract event details
+        msg = event_dict.get('message')  # type: Dict
+        channel = event_dict.get('channel').get('id')
+        thread_ts = msg.get('thread_ts')
+        blocks = msg.get('blocks')
+        msg_text = msg.get('text')
+
+        replaced_blocks = []
+        if blocks is not None:
+            self.log.debug(f'{len(blocks)} blocks found. Processing action message as blocks.')
+            for i, block in enumerate(blocks):
+                replaced_blocks.append(recursive_uwu(i, block, replace_func=funktsioon))
+            # Attempt to send the message to the channel
+            try:
+                self.st.send_message(channel=channel, message='A shortcut message', blocks=replaced_blocks,
+                                     thread_ts=thread_ts)
+            except SlackApiError:
+                self.log.error(f'There was an error with attempting to send the message blocks. '
+                               f'Likely due to them being malformed: \n{blocks}\n Sending just the text')
+                self.st.send_message(channel=channel, message=funktsioon(msg_text), thread_ts=thread_ts)
+        else:
+            self.log.debug('Blocks weren\'t detected. Sending the plaintext message.')
+            self.st.send_message(channel=channel, message=funktsioon(msg_text), thread_ts=thread_ts)
 
     def prebuild_main_menu(self, user_id: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""
@@ -398,9 +405,10 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         return f'{message.replace("shrug", "").strip()} ¯\\_(ツ)_/¯'
 
     @staticmethod
-    def randcap(message: str) -> str:
+    def randcap(message: str, skip_first_word: bool = False) -> str:
         """Randomly capitalize string"""
-        message = ' '.join(message.split()[1:])
+        if skip_first_word:
+            message = ' '.join(message.split()[1:])
         weights = (str.lower, str.upper)
         return ''.join(choice(weights)(c) for c in message) + ' :spongebob-mock:'
 
