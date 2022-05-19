@@ -86,7 +86,7 @@ def handle_action():
     # Respond to the initial message and update it
     update_dict = {
         'replace_original': True,
-        'text': 'boop beep boop'
+        'text': 'boop boop...beep?'
     }
     if event_data.get('container', {'is_ephemeral': False}).get('is_ephemeral', False):
         update_dict['response_type'] = 'ephemeral'

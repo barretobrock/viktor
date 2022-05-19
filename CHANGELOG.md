@@ -15,6 +15,13 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.10] - 2022-05-19
+#### Removed
+ - Log entries that were too verbose
+#### Fixed
+ - Logic in action processing that expected uniform event dictionary structure
+#### Security
+ 
 ### [1.6.9] - 2022-05-14
 #### Added
  - Table transfer script

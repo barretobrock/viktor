@@ -116,7 +116,6 @@ def handle_cron_profile_update():
 
         user: TableSlackUser
         for user in users:
-            mainapp.logg.debug(f'Working on user id: {user.user_id}')
             most_recent_changelog = session.query(TableSlackUserChangeLog).filter(
                 TableSlackUserChangeLog.user_key == user.user_id
             ).order_by(TableSlackUserChangeLog.created_date.desc()).limit(1).one_or_none()
@@ -127,7 +126,6 @@ def handle_cron_profile_update():
                 session.add(TableSlackUserChangeLog(user_key=user.user_id, **attr_dict))
             else:
                 # Begin comparing to find what's new
-                mainapp.logg.debug('Comparing user details to most recent changelog entry')
                 change_dict = {'user_hashname': f'{user.display_name}|{user.slack_user_hash}'}
                 for attr in attrs:
                     last_chglog = most_recent_changelog.__dict__.get(attr)
@@ -138,7 +136,8 @@ def handle_cron_profile_update():
                             'new': cur_user
                         }
                 if len(change_dict) > 1:
-                    mainapp.logg.debug(f'Changes detected for {user.display_name}({user.user_id})')
+                    mainapp.logg.debug(f'{len(change_dict)} changes detected for '
+                                       f'{user.display_name}(uid:{user.user_id})')
                     # Update the changelog
                     attr_dict = {k: user.__dict__.get(k) for k in attrs}
                     session.add(TableSlackUserChangeLog(user_key=user.user_id, **attr_dict))
