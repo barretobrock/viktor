@@ -75,7 +75,15 @@ commands:
                 - random
             desc: Give the bot a little praise
             response-txt: thanks <@{user}>!
-
+        ^get\s?fa[hr]t:
+            tags:
+                - random
+            desc: Toot toot
+            response-cmd:
+                callable: get_fart
+                args:
+                    - user
+                    - channel
         ^time$:
             tags:
                 - debug

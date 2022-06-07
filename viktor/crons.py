@@ -1,3 +1,10 @@
+"""
+Cron endpoints that get hit with a cadence defined either in crontab or elsewhere.
+
+Set URLs so they can be accessed
+    0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/ENDPOINT
+"""
+
 import math
 from datetime import (
     datetime,
@@ -26,9 +33,6 @@ logg = get_base_logger()
 @logg.catch
 def handle_cron_new_emojis():
     """Check for newly uploaded emojis (triggered by cron task that sends POST req every 60m mins)
-
-    Set this url so it is accessed with crontab such:
-        0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/new-emojis
     """
     mainapp.logg.debug('Beginning new emoji report...')
     now = datetime.now()
@@ -57,9 +61,6 @@ def handle_cron_new_emojis():
 @logg.catch
 def handle_cron_new_potential_emojis():
     """Daily check for new potential emojis (triggered by cron task that sends POST req every 10 mins)
-
-    Set this url so it is accessed with crontab such:
-        0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/new-potential-emojis
     """
     mainapp.logg.debug('Beginning new potential emoji report...')
     interval = (datetime.now() - timedelta(hours=3))
@@ -82,7 +83,7 @@ def handle_cron_new_potential_emojis():
         for i in range(0, len(blocks), 50):
             mainapp.logg.debug(f'Sending block {i + 1} of {math.ceil(len(blocks)/50)}')
             mainapp.Bot.st.send_message(channel=mainapp.Bot.emoji_channel, message='New Potential Emoji report!',
-                                        blocks=blocks[i: i + 50])
+                                        blocks=blocks[i: i + 50], unfurl_media=False)
     return make_response('', 200)
 
 
@@ -90,9 +91,6 @@ def handle_cron_new_potential_emojis():
 @logg.catch
 def handle_cron_profile_update():
     """Check for newly updated profile elements (triggered by cron task that sends POST req every 1 hr)"""
-    # Check emojis uploaded (every 60 mins)
-    # This url is hit in crontab as such:
-    #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/profile-update
     mainapp.logg.debug('Beginning updated profile report...')
     # TODO: Methodology...
     #   since Slack pushes a /user_change event for every minor change, we should wait before logging that change
@@ -170,9 +168,6 @@ def handle_cron_profile_update():
 def handle_cron_reacts():
     """Check for new reactions - if any, run through and react to them"""
     pass
-    # Check reactions (every 5 mins)
-    # This url is hit in crontab as such:
-    #       0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/reacts
     # logg.debug(f'Handling new reacts from {hour_ago}...')
     # reacts = Bot.state_store.get('reacts', {})
     # if len(reacts) > 0:

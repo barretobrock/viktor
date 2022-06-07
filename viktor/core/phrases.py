@@ -240,7 +240,8 @@ class PhraseBuilders:
             new_phrase.append(word)
         return ' '.join(new_phrase).strip()
 
-    def _process_cmd_and_generate_response(self, cmd: str, message: str, match_pattern: str, user: str = None) -> str:
+    def _process_cmd_and_generate_response(self, cmd: str, message: str, match_pattern: str,
+                                           user: str = None) -> str:
         """Handles processing the insult, compliment, phrase command and generating an appropriate response"""
         # Extract commands and other info from the message
         category_str, n_times, target = self._message_extractor(message=message, cmd=match_pattern,

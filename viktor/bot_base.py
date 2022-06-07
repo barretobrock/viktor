@@ -5,6 +5,8 @@ import re
 import string
 import sys
 import requests
+import tempfile
+from pathlib import Path
 from datetime import datetime
 from types import SimpleNamespace
 from typing import (
@@ -659,6 +661,16 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         with self.eng.session_mgr() as session:
             session.add(fact)
         self.st.send_message(channel=channel, message=f'Fact added! id:`{fact.id}`\n{fact.text}')
+
+    def get_fart(self, user: str, channel: str):
+        fart_id = randint(1, 3000)
+        resp = requests.get(f'https://boredhumans.b-cdn.net/farts/{fart_id}.mp3')
+        fartpath = Path(tempfile.gettempdir()).joinpath('fart.mp3')
+        if resp.status_code == 200:
+            with fartpath.open(mode='wb') as f:
+                f.write(resp.content)
+            self.st.upload_file(channel=channel, filepath=fartpath.__str__(), filename='fart.mp3',
+                                txt=f'Ok! Here\'s the recording I took of <@{user}> recently!')
 
     # OKR Methods
     # ------------------------------------------------
