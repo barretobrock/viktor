@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [1.6.11] - 2022-06-07
+#### Added
+ - `^get\s?fa[hr]t` command
+ 
 ### [1.6.10] - 2022-05-19
 #### Removed
  - Log entries that were too verbose
