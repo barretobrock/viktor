@@ -20,7 +20,7 @@ python = "^3.10"
 slacktools = {git = "https://github.com/barretobrock/slacktools.git"}
 pukr = { git = "https://github.com/barretobrock/pukr.git", branch = "main" }
 Flask = "2.1.1"
-lxml = "^4.6.4"
+lxml = "^4.9.1"
 numpy = "^1.22.3"
 pandas = "^1.4.2"
 pykeepass = "^4.0.1"
