@@ -11,7 +11,7 @@ This is really something I built for personal use. There are credential collecti
 # Check with
 sh --version
 # Change with
-sudo dpkg-reconfigure dash 
+sudo dpkg-reconfigure dash
 ```
 
 ## Installation
@@ -101,6 +101,3 @@ Then in another window, run the script to get the bot/app running. Don't forget 
    - search.read
 
  .* = Not necessary for the primary functions of the service.
-
-
-
