@@ -1,9 +1,9 @@
 from slacktools.secretstore import SecretStore
-from viktor.settings import auto_config
-from viktor.logg import get_base_logger
-from viktor.db_eng import ViktorPSQLClient
-from viktor.core.emoji_scraper import scrape_emojis
 
+from viktor.core.emoji_scraper import scrape_emojis
+from viktor.db_eng import ViktorPSQLClient
+from viktor.logg import get_base_logger
+from viktor.settings import auto_config
 
 bot_name = auto_config.BOT_NICKNAME
 logg = get_base_logger()

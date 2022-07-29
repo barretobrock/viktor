@@ -1,10 +1,12 @@
 from typing import (
     Dict,
     Optional,
-    Union
+    Union,
 )
+
 from loguru import logger
 from slacktools.db_engine import PSQLClient
+
 from viktor.model import (
     BotSettingType,
     ErrorType,

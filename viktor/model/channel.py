@@ -1,10 +1,11 @@
 from sqlalchemy import (
-    Column,
-    Boolean,
     VARCHAR,
-    Integer
+    Boolean,
+    Column,
+    Integer,
 )
 from sqlalchemy.orm import relationship
+
 # local imports
 from viktor.model.base import Base
 

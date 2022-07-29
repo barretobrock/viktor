@@ -1,57 +1,57 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from datetime import datetime
 import os
+from pathlib import Path
+from random import (
+    choice,
+    randint,
+)
 import re
 import string
 import sys
-import requests
 import tempfile
-from pathlib import Path
-from datetime import datetime
 from types import SimpleNamespace
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
     Union,
-    Dict
 )
 from urllib.parse import urlparse
-import pandas as pd
+
+from loguru import logger
 import numpy as np
+import pandas as pd
+import requests
 from slack.errors import SlackApiError
-from random import (
-    randint,
-    choice
-)
+from slacktools import BlockKitBuilder as BKitB
+from slacktools import SlackBotBase
+from slacktools.tools import build_commands
 from sqlalchemy.sql import (
     and_,
-    func
+    func,
 )
-from slacktools import (
-    SlackBotBase,
-    BlockKitBuilder as BKitB
-)
-from slacktools.tools import build_commands
-from loguru import logger
+
 from viktor import ROOT_PATH
 from viktor.core.linguistics import Linguistics
 from viktor.core.phrases import (
     PhraseBuilders,
-    recursive_uwu
-)
-from viktor.settings import auto_config
-from viktor.model import (
-    BotSettingType,
-    ResponseType,
-    ResponseCategory,
-    TableEmoji,
-    TablePerk,
-    TableResponse,
-    TableSlackUser
+    recursive_uwu,
 )
 from viktor.db_eng import ViktorPSQLClient
 from viktor.forms import Forms
+from viktor.model import (
+    BotSettingType,
+    ResponseCategory,
+    ResponseType,
+    TableEmoji,
+    TablePerk,
+    TableResponse,
+    TableSlackUser,
+)
+from viktor.settings import auto_config
 
 
 class Viktor(Linguistics, PhraseBuilders, Forms):

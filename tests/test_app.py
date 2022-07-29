@@ -1,9 +1,9 @@
-from unittest import TestCase, main
-from unittest.mock import MagicMock
-from tests.common import (
-    get_test_logger,
-    random_string
+from unittest import (
+    TestCase,
+    main,
 )
+
+from tests.common import get_test_logger
 
 
 class TestApp(TestCase):

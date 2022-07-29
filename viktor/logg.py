@@ -1,7 +1,7 @@
-import sys
 from pathlib import Path
-from loguru import logger
+import sys
 
+from loguru import logger
 
 SERVICE_NAME = 'viktor'
 

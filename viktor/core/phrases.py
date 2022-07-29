@@ -1,33 +1,34 @@
-import re
-import requests
-import string
 from random import (
+    choice,
     randint,
-    choice
 )
+import re
+import string
 from typing import (
+    Dict,
     List,
     Optional,
-    Dict,
+    Tuple,
     Union,
-    Tuple
 )
-from sqlalchemy.sql import (
-    func,
-    and_
-)
+
+import requests
 from slacktools import BlockKitBuilder as BKitB
 from slacktools.slack_input_parser import SlackInputParser
+from sqlalchemy.sql import (
+    and_,
+    func,
+)
+
+from viktor.db_eng import ViktorPSQLClient
 from viktor.model import (
     AcronymType,
     ResponseCategory,
     ResponseType,
     TableAcronym,
     TableResponse,
-    TableUwu
+    TableUwu,
 )
-from viktor.db_eng import ViktorPSQLClient
-
 
 TEXT_KEYS = ['text']
 

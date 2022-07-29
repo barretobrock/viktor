@@ -1,20 +1,20 @@
 from .acronym import (
     AcronymType,
-    TableAcronym
+    TableAcronym,
 )
 from .base import Base
 from .channel import TableSlackChannel
 from .emoji import (
     TableEmoji,
-    TablePotentialEmoji
+    TablePotentialEmoji,
 )
 from .error import (
     ErrorType,
-    TableError
+    TableError,
 )
 from .okr import (
     TablePerk,
-    TableQuote
+    TableQuote,
 )
 from .response import (
     ResponseCategory,
@@ -23,10 +23,10 @@ from .response import (
 )
 from .setting import (
     BotSettingType,
-    TableBotSetting
+    TableBotSetting,
 )
 from .user import (
     TableSlackUser,
-    TableSlackUserChangeLog
+    TableSlackUserChangeLog,
 )
 from .uwu import TableUwu

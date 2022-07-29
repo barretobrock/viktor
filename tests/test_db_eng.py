@@ -1,14 +1,15 @@
 from unittest import (
     TestCase,
-    main
+    main,
 )
 from unittest.mock import MagicMock
-from viktor.model import BotSettingType
-from viktor.db_eng import ViktorPSQLClient
+
 from tests.common import (
     get_test_logger,
-    make_patcher
+    make_patcher,
 )
+from viktor.db_eng import ViktorPSQLClient
+from viktor.model import BotSettingType
 
 
 class TestPSQLClient(TestCase):

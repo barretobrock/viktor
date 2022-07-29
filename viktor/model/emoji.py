@@ -1,11 +1,13 @@
 from datetime import datetime
+
 from sqlalchemy import (
-    Column,
+    TIMESTAMP,
     VARCHAR,
-    Integer,
     Boolean,
-    TIMESTAMP
+    Column,
+    Integer,
 )
+
 # local imports
 from viktor.model.base import Base
 

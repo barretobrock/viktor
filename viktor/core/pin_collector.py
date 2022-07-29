@@ -1,17 +1,19 @@
 from datetime import datetime
 from typing import Dict
+
+from loguru import logger
 import pytz
+from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import (
     func,
-    or_
+    or_,
 )
-from sqlalchemy.engine.row import Row
-from loguru import logger
+
 from viktor.db_eng import ViktorPSQLClient
 from viktor.model import (
+    TableQuote,
     TableSlackChannel,
     TableSlackUser,
-    TableQuote
 )
 
 

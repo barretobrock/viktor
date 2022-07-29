@@ -2,16 +2,20 @@ import re
 import sys
 import time
 from typing import (
+    Dict,
     List,
-    Dict
 )
-from slack.errors import SlackApiError
+
 from loguru import logger
+from slack.errors import SlackApiError
 from slacktools import (
     SecretStore,
-    SlackTools
+    SlackTools,
 )
 from slacktools.gsheet import GSheetAgent
+
+from viktor.core.pin_collector import collect_pins
+from viktor.db_eng import ViktorPSQLClient
 from viktor.model import (
     AcronymType,
     Base,
@@ -29,11 +33,9 @@ from viktor.model import (
     TableSlackChannel,
     TableSlackUser,
     TableSlackUserChangeLog,
-    TableUwu
+    TableUwu,
 )
 from viktor.settings import auto_config
-from viktor.db_eng import ViktorPSQLClient
-from viktor.core.pin_collector import collect_pins
 
 
 class ETL:

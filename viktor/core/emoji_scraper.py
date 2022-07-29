@@ -1,8 +1,10 @@
 import re
+
 from loguru import logger
-from viktor.model import TablePotentialEmoji
-from viktor.db_eng import ViktorPSQLClient
+
 from viktor.core.text_cleaner import XPathExtractor
+from viktor.db_eng import ViktorPSQLClient
+from viktor.model import TablePotentialEmoji
 
 
 def scrape_emojis(psql_engine: ViktorPSQLClient, log: logger):

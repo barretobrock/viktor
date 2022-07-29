@@ -1,6 +1,8 @@
 from pukr import get_logger
-from slacktools.secretstore import SecretStore
 from slacktools.db_engine import PSQLClient
+from slacktools.secretstore import SecretStore
+
+from viktor.etl.etl_gs import ETL
 from viktor.model import (
     TableAcronym,
     TableBotSetting,
@@ -13,10 +15,8 @@ from viktor.model import (
     TableSlackChannel,
     TableSlackUser,
     TableSlackUserChangeLog,
-    TableUwu
+    TableUwu,
 )
-from viktor.etl.etl_gs import ETL
-
 
 TARGET_DB = 'DEV'
 SOURCE_DB = 'PROD'

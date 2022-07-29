@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import re
-import requests
-import numpy as np
-import urllib.parse as parse
-from typing import (
-    Optional,
-    List,
-    Union,
-    Dict,
-    Tuple
-)
 from io import StringIO
+import re
+from typing import (
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
+import urllib.parse as parse
+
 from lxml import etree
+import numpy as np
+import requests
 from slacktools import BlockKitBuilder as BKitB
 
 

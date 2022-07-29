@@ -1,30 +1,32 @@
+from datetime import datetime
 import json
 import signal
-import requests
-from datetime import datetime
+
 from flask import (
     Flask,
+    make_response,
     request,
-    make_response
 )
+import requests
+from slackeventsapi import SlackEventAdapter
+from slacktools.secretstore import SecretStore
 from sqlalchemy.sql import (
     and_,
     func,
-    not_
+    not_,
 )
-from slackeventsapi import SlackEventAdapter
-from slacktools.secretstore import SecretStore
-from viktor.db_eng import ViktorPSQLClient
-from viktor.model import (
-    TableEmoji,
-    TableQuote
-)
-from viktor.settings import auto_config
+
+from viktor.bot_base import Viktor
 from viktor.core.pin_collector import collect_pins
 from viktor.core.user_changes import extract_user_change
-from viktor.logg import get_base_logger
-from viktor.bot_base import Viktor
 from viktor.crons import cron
+from viktor.db_eng import ViktorPSQLClient
+from viktor.logg import get_base_logger
+from viktor.model import (
+    TableEmoji,
+    TableQuote,
+)
+from viktor.settings import auto_config
 
 bot_name = auto_config.BOT_NICKNAME
 logg = get_base_logger()

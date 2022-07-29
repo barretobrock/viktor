@@ -1,13 +1,14 @@
 from sqlalchemy import (
+    TEXT,
+    VARCHAR,
     Boolean,
     Column,
-    VARCHAR,
-    Integer,
     Float,
     ForeignKey,
-    TEXT
+    Integer,
 )
 from sqlalchemy.orm import relationship
+
 # local imports
 from viktor.model.base import Base
 

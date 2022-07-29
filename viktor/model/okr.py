@@ -1,14 +1,16 @@
 from datetime import datetime
+
 from sqlalchemy import (
-    Column,
-    Boolean,
-    VARCHAR,
-    Integer,
-    ForeignKey,
     TEXT,
-    TIMESTAMP
+    TIMESTAMP,
+    VARCHAR,
+    Boolean,
+    Column,
+    ForeignKey,
+    Integer,
 )
 from sqlalchemy.orm import relationship
+
 # local imports
 from viktor.model.base import Base
 

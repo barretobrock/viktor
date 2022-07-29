@@ -1,12 +1,14 @@
 import enum
+
 from sqlalchemy import (
+    TEXT,
+    VARCHAR,
     Column,
     Enum,
     ForeignKey,
-    VARCHAR,
     Integer,
-    TEXT
 )
+
 # local imports
 from viktor.model.base import Base
 

@@ -5,25 +5,26 @@ Set URLs so they can be accessed
     0 * * * * /usr/bin/curl -X POST https://YOUR_APP/cron/ENDPOINT
 """
 
-import math
 from datetime import (
     datetime,
-    timedelta
+    timedelta,
 )
+import math
+
 from flask import (
     Blueprint,
-    make_response
+    make_response,
 )
 from slacktools.block_kit import BlockKitBuilder as BKitB
+
+import viktor.app as mainapp
+from viktor.logg import get_base_logger
 from viktor.model import (
     TableEmoji,
     TablePotentialEmoji,
     TableSlackUser,
-    TableSlackUserChangeLog
+    TableSlackUserChangeLog,
 )
-import viktor.app as mainapp
-from viktor.logg import get_base_logger
-
 
 cron = Blueprint('cron', __name__)
 logg = get_base_logger()

@@ -1,16 +1,18 @@
 from typing import (
     Dict,
     Optional,
-    Union
+    Union,
 )
-from sqlalchemy.orm import Session
+
 from loguru import logger
 from slacktools.block_kit import BlockKitBuilder as BKitB
 from slacktools.slackbot import SlackBotBase
+from sqlalchemy.orm import Session
+
 from viktor.db_eng import ViktorPSQLClient
 from viktor.model import (
     TableSlackUser,
-    TableSlackUserChangeLog
+    TableSlackUserChangeLog,
 )
 
 # Attribute map for slack API values and table columns

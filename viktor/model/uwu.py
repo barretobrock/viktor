@@ -1,8 +1,9 @@
 from sqlalchemy import (
-    Column,
     TEXT,
-    Integer
+    Column,
+    Integer,
 )
+
 # local imports
 from viktor.model.base import Base
 

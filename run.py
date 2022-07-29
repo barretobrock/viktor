@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
+
 os.environ['VIKTOR_ENV'] = "PRODUCTION"
 from viktor.app import app
 

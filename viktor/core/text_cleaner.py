@@ -1,15 +1,16 @@
 from typing import (
     List,
-    Union
+    Union,
 )
 from urllib.request import (
     Request,
-    urlopen
+    urlopen,
 )
+
 from lxml import etree
 from lxml.etree import (
+    _Element,
     _ElementTree,
-    _Element
 )
 
 

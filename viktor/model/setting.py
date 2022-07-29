@@ -1,9 +1,11 @@
 import enum
+
 from sqlalchemy import (
     Column,
+    Enum,
     Integer,
-    Enum
 )
+
 # local imports
 from viktor.model.base import Base
 

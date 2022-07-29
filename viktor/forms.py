@@ -1,11 +1,10 @@
 from typing import (
+    Dict,
     List,
-    Dict
 )
-from slacktools import (
-     BlockKitBuilder as BKitB,
-     SlackTools
-)
+
+from slacktools import BlockKitBuilder as BKitB
+from slacktools import SlackTools
 
 
 class Forms:

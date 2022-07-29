@@ -1,11 +1,15 @@
-from unittest import TestCase, main
+from unittest import (
+    TestCase,
+    main,
+)
 from unittest.mock import MagicMock
-from viktor.bot_base import Viktor, build_commands
+
 from tests.common import (
     get_test_logger,
     make_patcher,
-    random_string
+    random_string,
 )
+from viktor.bot_base import Viktor
 
 
 class TestViktor(TestCase):
@@ -55,8 +59,8 @@ class TestViktor(TestCase):
 
         for scen, scen_dict in action_scenarios.items():
             self.log.debug(f'Working on scenario {scen}')
-            resp = self.viktor.process_incoming_action(user=user, channel=channel, action_dict=scen_dict['resp'],
-                                                       event_dict={})
+            _ = self.viktor.process_incoming_action(user=user, channel=channel, action_dict=scen_dict['resp'],
+                                                    event_dict={})
             if 'check_call' in scen_dict.keys():
                 check_dict = scen_dict['check_call']
                 check_dict['call'].assert_called_with(*check_dict['args'], **check_dict['kwargs'])

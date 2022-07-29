@@ -1,7 +1,7 @@
 """Configuration setup"""
 from viktor import (
+    __update_date__,
     __version__,
-    __update_date__
 )
 
 
