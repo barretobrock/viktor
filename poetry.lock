@@ -853,7 +853,7 @@ pyee = ">=8"
 
 [[package]]
 name = "slacktools"
-version = "1.7.3"
+version = "1.7.4"
 description = "A common library for working with Slack API"
 category = "main"
 optional = false
@@ -880,7 +880,7 @@ test = []
 type = "git"
 url = "https://github.com/barretobrock/slacktools.git"
 reference = "master"
-resolved_reference = "6f2d1608bb758601c95ad24fc5001c846caaeb52"
+resolved_reference = "866a913760a61a6d409a3a7e886ab0759b70af64"
 
 [[package]]
 name = "sqlalchemy"
