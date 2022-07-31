@@ -25,7 +25,7 @@ class Development(Common):
     ENV = 'DEV'
     BOT_LAST_NAME = 'Debugnatov'
     MAIN_CHANNEL = 'CM376Q90F'  # #test
-    TRIGGERS = ['diktor', 'd!']
+    TRIGGERS = ['biktor', 'b!']
     DEBUG = True
 
 
