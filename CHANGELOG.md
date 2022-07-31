@@ -14,6 +14,15 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Fixed
 #### Security
 __BEGIN-CHANGELOG__
+ 
+### [1.7.1] - 2022-07-31
+#### Added
+ - [GH-7](../../issues/7) - AG should show group(s) used
+#### Fixed
+ - Pin collector had some differing attribute names, in part to different structures of event and web API structures
+ - [GH-4](../../issues/4) - Mock included in `mock` 
+ - [GH-9](../../issues/9) - Tagged compliments strip away the tag
+ - [GH-11](../../issues/11) - `uwu` removes 'uwu' too greedily 
 
 ### [1.7.0] - 2022-07-31
 #### Changed
