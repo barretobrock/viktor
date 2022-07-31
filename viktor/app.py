@@ -10,21 +10,21 @@ from flask import (
 )
 import requests
 from slackeventsapi import SlackEventAdapter
-from slacktools.secretstore import SecretStore
+from slacktools.api.events.emoji_changed import (
+    EmojiAdded,
+    EmojiRemoved,
+    EmojiRenamed,
+    decide_emoji_event_class,
+)
+from slacktools.api.events.pin_added_or_removed import PinEvent
+from slacktools.api.events.reaction_added_or_removed import ReactionEvent
 from slacktools.api.events.types import (
     EventWrapperType,
     StandardMessageEventType,
-    ThreadedMessageEventType
+    ThreadedMessageEventType,
 )
-from slacktools.api.events.emoji_changed import (
-    decide_emoji_event_class,
-    EmojiAdded,
-    EmojiRemoved,
-    EmojiRenamed
-)
-from slacktools.api.events.reaction_added_or_removed import ReactionEvent
-from slacktools.api.events.pin_added_or_removed import PinEvent
 from slacktools.api.slash.slash import SlashCommandEventType
+from slacktools.secretstore import SecretStore
 from sqlalchemy.sql import (
     and_,
     func,

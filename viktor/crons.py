@@ -18,6 +18,7 @@ from flask import (
 from slacktools.block_kit import BlockKitBuilder as BKitB
 
 import viktor.app as mainapp
+from viktor.core.user_changes import build_profile_diff
 from viktor.logg import get_base_logger
 from viktor.model import (
     TableEmoji,
@@ -25,7 +26,6 @@ from viktor.model import (
     TableSlackUser,
     TableSlackUserChangeLog,
 )
-from viktor.core.user_changes import build_profile_diff
 
 cron = Blueprint('cron', __name__)
 logg = get_base_logger()

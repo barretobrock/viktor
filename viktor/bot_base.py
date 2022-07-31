@@ -26,10 +26,8 @@ import numpy as np
 import pandas as pd
 import requests
 from slack.errors import SlackApiError
-from slacktools import (
-    BlockKitBuilder as BKitB,
-    SlackBotBase
-)
+from slacktools import BlockKitBuilder as BKitB
+from slacktools import SlackBotBase
 from slacktools.api.events.types import AllMessageEventTypes
 from slacktools.api.slash.slash import SlashCommandEventType
 from slacktools.tools import build_commands

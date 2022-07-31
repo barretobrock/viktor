@@ -14,7 +14,7 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Fixed
 #### Security
 __BEGIN-CHANGELOG__
- 
+
 ### [1.7.0] - 2022-07-31
 #### Changed
  - Relies on new `slacktools` dict-based classes for easier typing
