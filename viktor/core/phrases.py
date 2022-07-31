@@ -75,7 +75,7 @@ class PhraseBuilders:
             text = ' '.join(msg.split()[msg.split().index('-l') + 2:])
         else:
             level = default_lvl
-            text = msg.replace('uwu', '').strip()
+            text = re.sub(r'^uwu', '', msg).strip()
 
         with self.eng.session_mgr() as session:
             # Randomly select 2 graphics
@@ -313,10 +313,13 @@ class PhraseBuilders:
                 processed = [' '.join(x) for x in word_lists]
             txt = '. '.join([x.strip().capitalize() for x in f'{" ".join(processed)}'.split('.')])
         elif cmd == 'compliment':
-            target = self._pronoun_objectifier(target)
+            if '<@' not in target:
+                target = self._pronoun_objectifier(target)
             if target in sum(self.pronoun_direction.values(), []):
                 # Maybe we'll circle back here later and use a smarter way of dealing with pronouns
                 txt = f"Dear Asshole,\n\t {' and '.join([' '.join(x) for x in word_lists])} \nViktor."
+            elif '<@' in target:
+                txt = f"Dearest {target.upper()},\n\t {' and '.join([' '.join(x) for x in word_lists])} \nViktor."
             else:
                 txt = f"Dear {target.title()},\n\t {' and '.join([' '.join(x) for x in word_lists])} \n <@{user}>"
         else:
