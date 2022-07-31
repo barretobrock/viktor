@@ -25,9 +25,11 @@ def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQL
     if is_event:
         pin_obj: PinEvent
         pin_item = pin_obj.item.message
+        pin_ts = pin_obj.event_ts
     else:
         pin_obj: PinApiObject
         pin_item = pin_obj.message
+        pin_ts = pin_obj.created
     # if pin_dict.get('message') is None:
     #     # Receiving a pin message in-prod is different than when using the historical response from /api/pin_list
     #     pin_dict = pin_dict.get('item')
@@ -79,7 +81,7 @@ def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQL
     log.debug(f'Passing text: "{text[:10]}"')
     with psql_client.session_mgr() as session:
         channel_key = session.query(TableSlackChannel.channel_id).filter(
-            TableSlackChannel.slack_channel_hash == pin_obj.channel
+            TableSlackChannel.slack_channel_hash == pin_item.channel
         ).one_or_none()
         if isinstance(channel_key, Row):
             # Convert to id
@@ -91,5 +93,5 @@ def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQL
         pinner_user_key=pinner.user_id if pinner is not None else None,
         link=pin_item.permalink,
         message_timestamp=datetime.fromtimestamp(float(pin_item.ts), us_ct),
-        pin_timestamp=datetime.fromtimestamp(pin_obj.created, us_ct)
+        pin_timestamp=datetime.fromtimestamp(float(pin_ts), us_ct)
     )
