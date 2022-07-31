@@ -19,7 +19,8 @@ from viktor.model import (
 )
 
 
-def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQLClient, log: logger, is_event: bool) -> TableQuote:
+def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQLClient, log: logger,
+                 is_event: bool) -> TableQuote:
     """Attempts to load pinned message into the quotes db"""
     us_ct = pytz.timezone('US/Central')
     if is_event:
@@ -30,9 +31,6 @@ def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQL
         pin_obj: PinApiObject
         pin_item = pin_obj.message
         pin_ts = pin_obj.created
-    # if pin_dict.get('message') is None:
-    #     # Receiving a pin message in-prod is different than when using the historical response from /api/pin_list
-    #     pin_dict = pin_dict.get('item')
     author_uid = pin_item.user
     author_name = pin_item.username
     if author_uid is None:
