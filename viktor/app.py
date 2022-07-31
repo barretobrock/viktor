@@ -215,9 +215,20 @@ def store_pins(event_data: EventWrapperType):
     tbl_obj = collect_pins(pin_obj=pin_obj, psql_client=eng, log=logg, is_event=True)
     # Add to db
     with eng.session_mgr() as session:
-        session.add(tbl_obj)
+        matches = session.query(TableQuote).filter(and_(
+            TableQuote.message_timestamp == tbl_obj.message_timestamp,
+            TableQuote.link == tbl_obj.link
+        )).all()
+        if len(matches) == 0:
+            logg.debug('No duplicates found for item - proceeding with pin')
+            session.add(tbl_obj)
+            msg = 'Pin successfully added, kommanderovnik o7'
+        else:
+            logg.debug(f'{len(matches)} quote item(s) with duplicate link and message timestamp found '
+                       f'- aborting pin')
+            msg = 'o7 KOMMANDEROVNIK! ...pin... was not added...  I... have failed you.'
 
-    Bot.st.send_message(channel=pin_obj.item.message.channel, message='Pin successfully added, kommanderovnik o7')
+    Bot.st.send_message(channel=pin_obj.item.message.channel, message=msg)
 
 
 @bot_events.on('pin_removed')
@@ -232,7 +243,8 @@ def remove_pins(event_data: EventWrapperType):
             TableQuote.link == tbl_obj.link
         )).update({TableQuote.is_deleted: True})
 
-    Bot.st.send_message(channel=pin_obj.item.message.channel, message='Pin successfully removed, kommanderovnik o7')
+    Bot.st.send_message(channel=pin_obj.item.message.channel,
+                        message='Pin successfully removed, kommanderovnik o7')
 
 
 @bot_events.on('user_change')
