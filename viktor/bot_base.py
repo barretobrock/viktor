@@ -412,10 +412,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         return f'{message.replace("shrug", "").strip()} ¯\\_(ツ)_/¯'
 
     @staticmethod
-    def randcap(message: str, skip_first_word: bool = False) -> str:
+    def randcap(message: str) -> str:
         """Randomly capitalize string"""
-        if skip_first_word:
-            message = ' '.join(message.split()[1:])
+        message = re.sub(r'^mock', '', message).strip()
         weights = (str.lower, str.upper)
         return ''.join(choice(weights)(c) for c in message) + ' :spongebob-mock:'
 
@@ -528,13 +527,14 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 BKitB.markdown_section('WFH Epoch')
             ]),
             BKitB.make_section_block(
-                BKitB.plaintext_section(f'Current WFH epoch time is *`{wfh_secs:.0f}`*.\n ({diff})')
+                BKitB.markdown_section(f'Current WFH epoch time is *`{wfh_secs:.0f}`*.\n ({diff})')
             ),
             BKitB.make_context_block([
-                BKitB.plaintext_section('The time units you\'re used to\n' + '\n'.join(normal_section))
+                BKitB.markdown_section('The time units you\'re used to\n' + '\n'.join(normal_section))
             ]),
             BKitB.make_context_block([
-                BKitB.markdown_section('Some time units that might be strange to you\n\n'.join(strange_section))
+                BKitB.markdown_section('Some time units that might be strange to you\n' +
+                                       '\n'.join(strange_section))
             ])
         ]
 
@@ -693,7 +693,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 )
             ),
             BKitB.make_section_block(
-                BKitB.plaintext_section(
+                BKitB.markdown_section(
                     f"\t<{self.show_onboring_link()}|Onboring Doc>\n"
                 )
             ),
@@ -760,7 +760,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 BKitB.markdown_section('you\'ll _really_ never see anything better, trust us!')
             ]),
             BKitB.make_section_block(
-                BKitB.plaintext_section('Here are the _amazing_ perks you have unlocked!!')
+                BKitB.markdown_section('Here are the _amazing_ perks you have unlocked!!')
             ),
             BKitB.make_section_block(
                 BKitB.markdown_section(''.join([p for p in final_perks]))
