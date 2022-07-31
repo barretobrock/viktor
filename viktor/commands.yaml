@@ -36,7 +36,7 @@ commands:
             response_cmd:
                 callable: search_help_block
                 args:
-                    - message
+                    - cleaned_message
         ^about:
             tags:
                 - debug
@@ -57,8 +57,8 @@ commands:
             response_cmd:
                 callable: prebuild_main_menu
                 args:
-                    - user
-                    - channel
+                    - user_id
+                    - channel_id
         ^add emoji:
             tags:
                 - emoji
@@ -67,14 +67,14 @@ commands:
             response_cmd:
                 callable: add_emoji_form_p1
                 args:
-                    - user
-                    - channel
-                    - message
+                    - user_id
+                    - channel_id
+                    - cleaned_message
         good bo[tiy]:
             tags:
                 - random
             desc: Give the bot a little praise
-            response_txt: thanks <@{user}>!
+            response_txt: thanks <@{user_id}>!
         ^(get\s?)?fa[hr]t:
             tags:
                 - random
@@ -82,8 +82,8 @@ commands:
             response_cmd:
                 callable: get_fart
                 args:
-                    - user
-                    - channel
+                    - user_id
+                    - channel_id
         ^time$:
             tags:
                 - debug
@@ -99,7 +99,7 @@ commands:
                 callable: get_emojis_like
                 args:
                     - match_pattern
-                    - message
+                    - cleaned_message
         ^emoji my words:
             tags:
                 - emoji
@@ -107,7 +107,7 @@ commands:
             response_cmd:
                 callable: word_emoji
                 args:
-                    - message
+                    - cleaned_message
                     - match_pattern
         ^((button|btn)\s?game|bg):
             tags:
@@ -117,7 +117,7 @@ commands:
             response_cmd:
                 callable: button_game
                 args:
-                    - message
+                    - cleaned_message
         ^wfh\s?(time|epoch):
             tags:
                 - tow
@@ -160,7 +160,7 @@ commands:
             response_cmd:
                 callable: show_my_perks
                 args:
-                    - user
+                    - user_id
         ^show all perks:
             tags:
                 - okr
@@ -177,7 +177,7 @@ commands:
             response_cmd:
                 callable: build_role_txt
                 args:
-                    - channel
+                    - channel_id
         ^update (role|doo[td]ies):
             tags:
                 - okr
@@ -187,8 +187,8 @@ commands:
             response_cmd:
                 callable: new_role_form_p1
                 args:
-                    - user
-                    - channel
+                    - user_id
+                    - channel_id
         ^show my (role|doo[td]ie)$:
             tags:
                 - okr
@@ -198,8 +198,8 @@ commands:
             response_cmd:
                 callable: build_role_txt
                 args:
-                    - channel
-                    - user
+                    - channel_id
+                    - user_id
     group-linguistics:
         ^e[nt]\s+:
             tags:
@@ -208,7 +208,7 @@ commands:
             response_cmd:
                 callable: prep_message_for_translation
                 args:
-                    - message
+                    - cleaned_message
                     - match_pattern
         ^ekss\s+:
             tags:
@@ -217,7 +217,7 @@ commands:
             response_cmd:
                 callable: prep_message_for_examples
                 args:
-                    - message
+                    - cleaned_message
                     - match_pattern
         ^lemma\s+:
             tags:
@@ -226,7 +226,7 @@ commands:
             response_cmd:
                 callable: prep_message_for_root
                 args:
-                    - message
+                    - cleaned_message
                     - match_pattern
         ^ety\s:
             tags:
@@ -235,7 +235,7 @@ commands:
             response_cmd:
                 callable: get_etymology
                 args:
-                    - message
+                    - cleaned_message
                     - match_pattern
     group-random:
         ^access:
@@ -252,7 +252,7 @@ commands:
             response_cmd:
                 callable: quote_me
                 args:
-                    - message
+                    - cleaned_message
                     - match_pattern
         ^(he(y|llo)|howdy|salu|hi|qq|wyd|greet|servus|ter|bonj):
             tags:
@@ -273,7 +273,7 @@ commands:
             response_cmd:
                 callable: inspirational
                 args:
-                    - channel
+                    - channel_id
         .*tihi.*:
             tags:
                 - random
@@ -287,7 +287,7 @@ commands:
             response_cmd:
                 callable: shurg
                 args:
-                    - message
+                    - cleaned_message
         ^(randcap|mock):
             tags:
                 - random
@@ -295,7 +295,7 @@ commands:
             response_cmd:
                 callable: randcap
                 args:
-                    - message
+                    - cleaned_message
         ^uwu:
             tags:
                 - random
@@ -311,12 +311,12 @@ commands:
             response_cmd:
                 callable: overly_polite
                 args:
-                    - message
+                    - cleaned_message
         ^sauce$:
             tags:
                 - random
             desc: Handle some ridicule...
-            response_txt: ay <@{user}> u got some jokes!
+            response_txt: ay <@{user_id}> u got some jokes!
         ^speak$:
             tags:
                 - random
@@ -345,7 +345,7 @@ commands:
             response_cmd:
                 callable: guess_acronym
                 args:
-                    - message
+                    - cleaned_message
         ^ins[ul]{2}t:
             tags:
                 - random
@@ -355,7 +355,7 @@ commands:
             response_cmd:
                 callable: insult
                 args:
-                    - message
+                    - cleaned_message
                     - match_pattern
         ^phrases?:
             tags:
@@ -367,7 +367,7 @@ commands:
             response_cmd:
                 callable: phrase_generator
                 args:
-                    - message
+                    - cleaned_message
                     - match_pattern
         ^compliment:
             tags:
@@ -380,7 +380,7 @@ commands:
                 args:
                     - raw_message
                     - match_pattern
-                    - user
+                    - user_id
         ^facts?:
             tags:
                 - random
@@ -402,5 +402,5 @@ commands:
             response_cmd:
                 callable: add_ifact_form
                 args:
-                    - user
-                    - channel
+                    - user_id
+                    - channel_id
