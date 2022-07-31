@@ -370,8 +370,8 @@ class PhraseBuilders:
         fact_header = f'{"Official" if category == ResponseCategory.STANDARD else "Conspiracy"} fact #{rf_id}'
 
         return [
-            BKitB.make_header(fact_header),
-            BKitB.make_block_section(randfact.text)
+            BKitB.make_header_block(fact_header),
+            BKitB.make_section_block(BKitB.markdown_section(randfact.text))
         ]
 
     def conspiracy_fact(self) -> Union[str, List[Dict]]:

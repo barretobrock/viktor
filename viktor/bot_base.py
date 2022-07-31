@@ -26,8 +26,12 @@ import numpy as np
 import pandas as pd
 import requests
 from slack.errors import SlackApiError
-from slacktools import BlockKitBuilder as BKitB
-from slacktools import SlackBotBase
+from slacktools import (
+    BlockKitBuilder as BKitB,
+    SlackBotBase
+)
+from slacktools.api.events.types import AllMessageEventTypes
+from slacktools.api.slash.slash import SlashCommandEventType
 from slacktools.tools import build_commands
 from sqlalchemy.sql import (
     and_,
@@ -105,10 +109,13 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         self.log.debug(f'{self.bot_name} booted up!')
 
     def get_bootup_msg(self) -> List[Dict]:
-        return [BKitB.make_context_section([
-            BKitB.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!"),
-            BKitB.markdown_section(f"(updated {self.update_date})")
-        ])]
+        return [
+            BKitB.make_context_block([
+                BKitB.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted "
+                                       f"up at `{datetime.now():%F %T}`!"),
+                BKitB.markdown_section(f"(updated {self.update_date})")
+            ])
+        ]
 
     def search_help_block(self, message: str):
         """Takes in a message and filters command descriptions for output
@@ -135,7 +142,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         """Runs just before instance is destroyed"""
         _ = args
         notify_block = [
-            BKitB.make_context_section([
+            BKitB.make_context_block([
                 BKitB.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
             ])
         ]
@@ -144,13 +151,13 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         self.log.info('Bot shutting down...')
         sys.exit(0)
 
-    def process_slash_command(self, event_dict: Dict):
+    def process_slash_command(self, event_dict: SlashCommandEventType):
         """Hands off the slash command processing while also refreshing the session"""
         self.st.parse_slash_command(event_dict)
 
-    def process_event(self, event_dict: Dict):
+    def process_event(self, event_dict: AllMessageEventTypes):
         """Hands off the event data while also refreshing the session"""
-        self.st.parse_event(event_data=event_dict)
+        self.st.parse_message_event(event_dict)
 
     def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict,
                                 ) -> Optional:
@@ -519,16 +526,18 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 strange_section.append(formatted)
 
         return [
-            BKitB.make_context_section([
+            BKitB.make_context_block([
                 BKitB.markdown_section('WFH Epoch')
             ]),
-            BKitB.make_block_section(
-                f'Current WFH epoch time is *`{wfh_secs:.0f}`*.'
-                f'\n ({diff})',
+            BKitB.make_section_block(
+                BKitB.plaintext_section(f'Current WFH epoch time is *`{wfh_secs:.0f}`*.\n ({diff})')
             ),
-            BKitB.make_context_section('The time units you\'re used to\n' + '\n'.join(normal_section)),
-            BKitB.make_context_section('Some time units that might be strange to you\n' +
-                                       '\n'.join(strange_section)),
+            BKitB.make_context_block([
+                BKitB.plaintext_section('The time units you\'re used to\n' + '\n'.join(normal_section))
+            ]),
+            BKitB.make_context_block([
+                BKitB.markdown_section('Some time units that might be strange to you\n\n'.join(strange_section))
+            ])
         ]
 
     # Misc. methods
@@ -580,21 +589,23 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 neg_values.append(val)
             else:
                 val = 0
-            btn_blocks.append(BKitB.make_action_button(f':{emojis[i - 1]}:', value=f'bg|{val + 5000}',
-                                                       action_id=f'buttongame-{i}'))
+            btn_blocks.append(BKitB.make_button_element(f':{emojis[i - 1]}:', value=f'bg|{val + 5000}',
+                                                        action_id=f'buttongame-{i}'))
 
         blocks = [
-            BKitB.make_block_section(':spinny-rainbow-sheep:'
-                                     ':alphabet-yellow-b::alphabet-yellow-u::alphabet-yellow-t:'
-                                     ':alphabet-yellow-t::alphabet-yellow-o::alphabet-yellow-n:'
-                                     ':blank::alphabet-yellow-g::alphabet-yellow-a::alphabet-yellow-m:'
-                                     ':alphabet-yellow-e::alphabet-yellow-exclamation::spinny-rainbow-sheep:'),
-            BKitB.make_context_section([
+            BKitB.make_section_block(
+                BKitB.plaintext_section(':spinny-rainbow-sheep::alphabet-yellow-b::alphabet-yellow-u:'
+                                        ':alphabet-yellow-t::alphabet-yellow-t::alphabet-yellow-o:'
+                                        ':alphabet-yellow-n::blank::alphabet-yellow-g::alphabet-yellow-a:'
+                                        ':alphabet-yellow-m::alphabet-yellow-e::alphabet-yellow-exclamation:'
+                                        ':spinny-rainbow-sheep:')
+            ),
+            BKitB.make_context_block([
                 BKitB.markdown_section('Try your luck and guess which button is hiding the LTITs!! '
                                        f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
                                        f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.')
             ]),
-            BKitB.make_action_button_group(btn_blocks)
+            BKitB.make_actions_block(btn_blocks)
         ]
 
         return blocks
@@ -677,17 +688,23 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
     def onboarding_docs(self) -> List[dict]:
         """Returns links to everything needed to bring a new OKR employee up to speed"""
         docs = [
-            BKitB.make_block_section([
-                "Welcome to OKR! We're glad to have you on board!\nCheck out these links below "
-                "to get familiar with OKR and the industry we support!"
-            ]),
-            BKitB.make_block_section([
-                f"\t<{self.show_onboring_link()}|Onboarding Doc>\n\t<{self.show_gsheets_link()}|Viktor's GSheet>\n"
-            ]),
-            BKitB.make_block_section([
-                "For any questions, reach out to the CEO or our Head of Recruiting. "
-                "Don't know who they are? Well, figure it out!"
-            ])
+            BKitB.make_section_block(
+                BKitB.plaintext_section(
+                    "Welcome to OKR! We're glad to have you on board!\nCheck out these links below "
+                    "to get familiar with OKR and the industry we support!"
+                )
+            ),
+            BKitB.make_section_block(
+                BKitB.plaintext_section(
+                    f"\t<{self.show_onboring_link()}|Onboring Doc>\n"
+                )
+            ),
+            BKitB.make_section_block(
+                BKitB.plaintext_section(
+                    "For any questions, reach out to the CEO or our Head of Recruiting. "
+                    "Don't know who they are? Well, figure it out!"
+                )
+            )
         ]
         return docs
 
@@ -698,11 +715,11 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
-            BKitB.make_header('OKR Perks!'),
-            BKitB.make_context_section([
+            BKitB.make_header_block('OKR Perks!'),
+            BKitB.make_context_block([
                 BKitB.markdown_section('you\'ll never see anything better, trust us!')
             ]),
-            BKitB.make_block_section([p for p in final_perks])
+            BKitB.make_section_block(BKitB.markdown_section(''.join(p for p in final_perks)))
         ]
 
     @staticmethod
@@ -740,13 +757,19 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
-            BKitB.make_header(f'Perks for our very highly valued `{user_obj.name}`!'),
-            BKitB.make_context_section([
+            BKitB.make_header_block(f'Perks for our very highly valued `{user_obj.name}`!'),
+            BKitB.make_context_block([
                 BKitB.markdown_section('you\'ll _really_ never see anything better, trust us!')
             ]),
-            BKitB.make_block_section('Here are the _amazing_ perks you have unlocked!!'),
-            BKitB.make_block_section([p for p in final_perks]),
-            BKitB.make_block_section(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
+            BKitB.make_section_block(
+                BKitB.plaintext_section('Here are the _amazing_ perks you have unlocked!!')
+            ),
+            BKitB.make_section_block(
+                BKitB.markdown_section(''.join([p for p in final_perks]))
+            ),
+            BKitB.make_section_block(
+                BKitB.markdown_section(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
+            ),
         ]
 
     def new_role_form_p1(self, user: str, channel: str):
@@ -822,8 +845,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         if user is None:
             # Printing roles for everyone
             roles_output += [
-                BKitB.make_header('OKR Roles'),
-                BKitB.make_context_section([
+                BKitB.make_header_block('OKR Roles'),
+                BKitB.make_context_block([
                     BKitB.markdown_section('_(as of last reorg)_')
                 ])
             ]
@@ -831,13 +854,16 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             with self.eng.session_mgr() as session:
                 users = session.query(TableSlackUser).all()
                 session.expunge_all()
-            roles_output += [BKitB.make_block_section([build_employee_info(emp=u)]) for u in users]
+            roles_output += [BKitB.make_section_block(BKitB.markdown_section(build_employee_info(emp=u)))
+                             for u in users]
         else:
             # Printing role for an individual user
             user_obj = self.eng.get_user_from_hash(user_hash=user)
             if user_obj is None:
                 return f'user <@{user}> not found in HR records... :nervous_peach:'
-            roles_output.append(BKitB.make_block_section([build_employee_info(emp=user_obj)]))
+            roles_output.append(
+                BKitB.make_section_block(BKitB.markdown_section(build_employee_info(emp=user_obj)))
+            )
 
         return roles_output
 

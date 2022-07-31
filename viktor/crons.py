@@ -25,6 +25,7 @@ from viktor.model import (
     TableSlackUser,
     TableSlackUserChangeLog,
 )
+from viktor.core.user_changes import build_profile_diff
 
 cron = Blueprint('cron', __name__)
 logg = get_base_logger()
@@ -49,7 +50,7 @@ def handle_cron_new_emojis():
         for i in range(0, len(emojis), 10):
             emoji_str += f"{''.join(emojis[i:i + 10])}\n"
         msg_block = [
-            BKitB.make_context_section([
+            BKitB.make_context_block([
                 BKitB.markdown_section('Incoming emojis that were added in the last 60 min!')
             ]),
         ]
@@ -72,13 +73,15 @@ def handle_cron_new_potential_emojis():
     mainapp.logg.debug(f'{len(new_potential_emojis)} new potential emojis pulled from db.')
     if len(new_potential_emojis) > 0:
         blocks = [
-            BKitB.make_context_section('New Potential Emojis :postal_horn::postal_horn::postal_horn:')
+            BKitB.make_context_block([
+                BKitB.markdown_section('New Potential Emojis :postal_horn::postal_horn::postal_horn:')
+            ])
         ]
         emoji: TablePotentialEmoji
         for emoji in new_potential_emojis:
             blocks.append(
-                BKitB.make_block_section(
-                    BKitB.build_link(url=emoji.link, text=emoji.name),
+                BKitB.make_section_block(
+                    BKitB.markdown_section(BKitB.build_link(url=emoji.link, text=emoji.name)),
                     accessory=BKitB.make_image_element(url=emoji.link, alt_txt='emoji'))
             )
         for i in range(0, len(blocks), 50):
@@ -144,20 +147,12 @@ def handle_cron_profile_update():
     # Now work on splitting the new/old info into a message
     for updated_user in updated_users:
         blocks = [
-            BKitB.make_context_section(f'*`{updated_user["user_hashname"]}`* '
-                                       f'changed their profile info recently!'),
-            BKitB.make_block_divider()
+            BKitB.make_context_block([
+                BKitB.markdown_section(f'*`{updated_user["user_hashname"]}`* changed their profile info recently!')
+            ]),
+            BKitB.make_divider_block()
         ]
-        for attr in attrs:
-            if attr not in updated_user.keys():
-                continue
-            blocks += [
-                BKitB.make_context_section(attr.title()),
-                BKitB.make_block_section(
-                    f"NEW:\n\t{updated_user.get(attr).get('new')}\n\n"
-                    f"OLD:\n\t{updated_user.get(attr).get('old')}"),
-                BKitB.make_block_divider()
-            ]
+        blocks = build_profile_diff(blocks=blocks, updated_user_dict=updated_user)
         mainapp.Bot.st.send_message(channel=mainapp.Bot.general_channel, message='user profile update!',
                                     blocks=blocks)
 

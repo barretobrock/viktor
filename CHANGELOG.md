@@ -14,6 +14,12 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Fixed
 #### Security
 __BEGIN-CHANGELOG__
+ 
+### [1.7.0] - 2022-07-31
+#### Changed
+ - Relies on new `slacktools` dict-based classes for easier typing
+ - Unified some user profile procedures
+ - Block Kit builder methods updated to new structure
 
 ### [1.6.11] - 2022-06-07
 #### Added

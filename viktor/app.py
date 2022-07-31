@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 import signal
+from typing import Union
 
 from flask import (
     Flask,
@@ -10,6 +11,20 @@ from flask import (
 import requests
 from slackeventsapi import SlackEventAdapter
 from slacktools.secretstore import SecretStore
+from slacktools.api.events.types import (
+    EventWrapperType,
+    StandardMessageEventType,
+    ThreadedMessageEventType
+)
+from slacktools.api.events.emoji_changed import (
+    decide_emoji_event_class,
+    EmojiAdded,
+    EmojiRemoved,
+    EmojiRenamed
+)
+from slacktools.api.events.reaction_added_or_removed import ReactionEvent
+from slacktools.api.events.pin_added_or_removed import PinEvent
+from slacktools.api.slash.slash import SlashCommandEventType
 from sqlalchemy.sql import (
     and_,
     func,
@@ -105,31 +120,28 @@ def handle_action():
 
 @bot_events.on('reaction_added')
 @logg.catch
-def reaction(event_data: dict):
-    event = event_data['event']
-    user = event.get('user')
-    item = event.get('item')
-    channel = item.get('channel')
-    reaction_emoji = event.get('reaction')
+def reaction(event_data: EventWrapperType):
+    event = ReactionEvent(event_data['event'])
+
     # This is the timestamp of the reaction
-    # react_ts = event.get('event_ts')
+    # react_ts = event.event_ts
     # This is the timestamp of the message
-    msg_ts = item.get('ts')
-    unique_event_key = f'{channel}|{user}|{msg_ts}|{datetime.now():%F %H}'
+    msg_ts = event.item.ts
+    unique_event_key = f'{event.item.channel}|{event.user}|{msg_ts}|{datetime.now():%F %H}'
     if unique_event_key in Bot.state_store['reacts']:
         # Event's already been processed
         logg.debug(f'Bypassing react to preexisting event key: {unique_event_key}')
         return make_response('', 200)
     else:
         # Store new react event first
-        logg.debug(f'Registering react in {channel}: {unique_event_key}')
+        logg.debug(f'Registering react in {event.item.channel}: {unique_event_key}')
         Bot.state_store['reacts'].add(unique_event_key)
 
-    channel_obj = eng.get_channel_from_hash(channel_hash=channel)
+    channel_obj = eng.get_channel_from_hash(channel_hash=event.item.channel)
 
     with eng.session_mgr() as session:
         logg.debug('Counting react in db...')
-        session.query(TableEmoji).filter(TableEmoji.name == reaction_emoji).update({
+        session.query(TableEmoji).filter(TableEmoji.name == event.reaction).update({
             'reaction_count': TableEmoji.reaction_count + 1
         })
         logg.debug('Determining if channel allows bot reactions')
@@ -137,7 +149,7 @@ def reaction(event_data: dict):
             logg.debug('Channel is denylisted for bot reactions. Do nothing...')
             # Channel doesn't allow reactions
             return make_response('', 200)
-    if user in [Bot.bot_id, Bot.user_id]:
+    if event.user in [Bot.bot_id, Bot.user_id]:
         logg.debug('Bypassing bot react...')
         # Don't allow this infinite loop
         return make_response('', 200)
@@ -147,7 +159,7 @@ def reaction(event_data: dict):
             logg.debug('Randomly selecting an emoji to react with.')
             emoji = session.query(TableEmoji).filter(not_(TableEmoji.is_react_denylisted)).\
                 order_by(func.random()).limit(1).one()
-            _ = Bot.st.bot.reactions_add(channel=channel, name=emoji.name, timestamp=msg_ts)
+            _ = Bot.st.bot.reactions_add(channel=event.item.channel, name=emoji.name, timestamp=msg_ts)
         return make_response('', 200)
     except Exception:
         # Sometimes we'll get a 'too_many_reactions' error. Disregard in that case
@@ -156,7 +168,7 @@ def reaction(event_data: dict):
 
 @bot_events.on('message')
 @logg.catch
-def scan_message(event_data: dict):
+def scan_message(event_data: Union[StandardMessageEventType, ThreadedMessageEventType]):
     Bot.process_event(event_data)
 
 
@@ -164,7 +176,7 @@ def scan_message(event_data: dict):
 @logg.catch
 def handle_slash():
     """Handles a slash command"""
-    event_data = request.form
+    event_data = request.form  # type: SlashCommandEventType
     # Handle the command
     Bot.process_slash_command(event_data)
 
@@ -174,47 +186,45 @@ def handle_slash():
 
 @bot_events.on('emoji_changed')
 @logg.catch
-def record_new_emojis(event_data):
-    event = event_data['event']
+def record_new_emojis(event_data: EventWrapperType):
+    event = decide_emoji_event_class(event_dict=event_data['event'])
     # Make a post about a new emoji being added in the #emoji_suggestions channel
-    event_subtype = event['subtype']
-    logg.debug(f'Emoji change detected: {event_subtype}')
-    if event_subtype == 'add':
-        logg.debug('Attempting to add new emoji')
-        emoji = event['name']
-        with eng.session_mgr() as session:
-            session.add(TableEmoji(name=emoji))
-    elif event_subtype == 'rename':
-        logg.debug('Attempting to rename an emoji.')
-        emoji = event['old_name']
-        new_name = event['new_name']
-        with eng.session_mgr() as session:
-            session.query(TableEmoji).filter(TableEmoji.name == emoji).update({'name': new_name})
-    elif event_subtype == 'remove':
-        logg.debug('Attempting to remove an emoji')
-        # For some reason, this gets passed as a list, so we'll name it accordingly
-        emojis = event['names']
-        with eng.session_mgr() as session:
-            session.query(TableEmoji).filter(TableEmoji.name.in_(emojis)).update({'is_deleted': True})
+    logg.debug(f'Emoji change detected: {event.subtype}')
+    match event.subtype:
+        case 'add':
+            event: EmojiAdded
+            logg.debug('Attempting to add new emoji')
+            with eng.session_mgr() as session:
+                session.add(TableEmoji(name=event.name))
+        case 'rename':
+            event: EmojiRenamed
+            logg.debug('Attempting to rename an emoji.')
+            with eng.session_mgr() as session:
+                session.query(TableEmoji).filter(TableEmoji.name == event.old_name).update({'name': event.new_name})
+        case 'remove':
+            event: EmojiRemoved
+            logg.debug('Attempting to remove an emoji')
+            with eng.session_mgr() as session:
+                session.query(TableEmoji).filter(TableEmoji.name.in_(event.names)).update({'is_deleted': True})
 
 
 @bot_events.on('pin_added')
 @logg.catch
-def store_pins(event_data):
-    event = event_data['event']
-    tbl_obj = collect_pins(event, psql_client=eng, log=logg)
+def store_pins(event_data: EventWrapperType):
+    pin_obj = PinEvent(event_dict=event_data['event'])
+    tbl_obj = collect_pins(pin_obj=pin_obj, psql_client=eng, log=logg, is_event=True)
     # Add to db
     with eng.session_mgr() as session:
         session.add(tbl_obj)
 
-    Bot.st.send_message(channel=event['channel_id'], message='Pin successfully added, kommanderovnik o7')
+    Bot.st.send_message(channel=pin_obj.item.message.channel, message='Pin successfully added, kommanderovnik o7')
 
 
 @bot_events.on('pin_removed')
 @logg.catch
-def remove_pins(event_data):
-    event = event_data['event']
-    tbl_obj = collect_pins(event, psql_client=eng, log=logg)
+def remove_pins(event_data: EventWrapperType):
+    pin_obj = PinEvent(event_dict=event_data['event'])
+    tbl_obj = collect_pins(pin_obj=pin_obj, psql_client=eng, log=logg, is_event=True)
     # Add to db
     with eng.session_mgr() as session:
         session.query(TableQuote).filter(and_(
@@ -222,12 +232,12 @@ def remove_pins(event_data):
             TableQuote.link == tbl_obj.link
         )).update({TableQuote.is_deleted: True})
 
-    Bot.st.send_message(channel=event['channel_id'], message='Pin successfully removed, kommanderovnik o7')
+    Bot.st.send_message(channel=pin_obj.item.message.channel, message='Pin successfully removed, kommanderovnik o7')
 
 
 @bot_events.on('user_change')
 @logg.catch
-def notify_new_statuses(event_data):
+def notify_new_statuses(event_data: EventWrapperType):
     """Triggered when a user updates their profile info. Gets saved to global dict
     where we then report it in #general"""
     event = event_data['event']

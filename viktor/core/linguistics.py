@@ -70,10 +70,10 @@ class Linguistics:
         results = content.xpath('//div[contains(@class, "word--C9UPa")]')[:3]
         output = []
         if len(results) > 0:
-            output.append(BKitB.make_header(f'Etymology of `{word}`'))
+            output.append(BKitB.make_header_block(f'Etymology of `{word}`'))
             for result in results:
                 title, text = get_title_and_desc(result)
-                output.append(BKitB.make_block_section([f'*`{title}`*', text]))
+                output.append(BKitB.make_section_block(BKitB.markdown_section(f'*`{title}`*\n{text}')))
 
         if len(output) > 0:
             return output
