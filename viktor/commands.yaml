@@ -340,8 +340,10 @@ commands:
                 - tow
             desc: Guess what an acryonym might mean!
             flags:
-                - -(g|group) <acronym-group>
+                - -(g|group) <acronym-group[standard|fun|work|urban]>
                 - -n <n-times>
+            examples:
+                - ag nasa -g urban
             response_cmd:
                 callable: guess_acronym
                 args:
@@ -351,7 +353,10 @@ commands:
                 - random
             desc: Generates an insult.
             flags:
-                - -(g|group) <insult-group>
+                - -(g|group) <insult-group[standard|work]>
+            examples:
+                - insult them
+                - insult me -g work
             response_cmd:
                 callable: insult
                 args:
@@ -362,8 +367,11 @@ commands:
                 - random
             desc: Generates a phrase from an ordered collection of words.
             flags:
-                - -(g|group) <phrase-group>
+                - -(g|group) <phrase-group[standard|work]>
                 - -n <n-times>
+            examples:
+                - phrase
+                - phrase -g work -n 5
             response_cmd:
                 callable: phrase_generator
                 args:
@@ -374,7 +382,10 @@ commands:
                 - random
             desc: Generates a :q:compliment:q:.
             flags:
-                - -(g|group) <compliment-group>
+                - -(g|group) <compliment-group[standard|work]>
+            examples:
+                - compliment me
+                - compliment that person -g work -n 5
             response_cmd:
                 callable: compliment
                 args:
