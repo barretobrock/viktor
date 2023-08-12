@@ -446,7 +446,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             '9': ':nine:',
             '0': ':zero:',
         })
-        return ''.join(char_dict[c.lower()] if c.lower() in char_dict.keys() else c for c in msg)
+        return ''.join(char_dict.get(c.lower(), c) for c in msg)
 
     @staticmethod
     def access_something() -> str:
