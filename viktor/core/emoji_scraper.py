@@ -7,21 +7,21 @@ from viktor.db_eng import ViktorPSQLClient
 from viktor.model import TablePotentialEmoji
 
 
-def scrape_emojis(psql_engine: ViktorPSQLClient, log: logger):
+def scrape_emojis(psql_engine: ViktorPSQLClient):
     """Scrape a site for emojis to announce newly-added emojis periodically"""
     url = 'https://slackmojis.com/emojis/recent'
-    log.debug('Loading recent emojis page...')
+    logger.debug('Loading recent emojis page...')
     xpath_extractor = XPathExtractor(url)
 
     emoji_list = xpath_extractor.xpath('//ul[@class="emojis"]', single=True)
     emojis = emoji_list.getchildren()
-    log.debug(f'Found {len(emojis)} potential emojis to scan')
+    logger.debug(f'Found {len(emojis)} potential emojis to scan')
 
     # Get a list of ids (tracked by the site) of the past emojis we've collected
     with psql_engine.session_mgr() as session:
         prev_emoji_ids = [x.data_emoji_id for x in session.query(TablePotentialEmoji).
                           order_by(TablePotentialEmoji.created_date.desc()).limit(250).all()]
-    log.debug(f'Extracted {len(prev_emoji_ids)} of the most recent previous emoji ids to compare against.')
+    logger.debug(f'Extracted {len(prev_emoji_ids)} of the most recent previous emoji ids to compare against.')
 
     new_emojis = []
     for emoji in emojis:
@@ -29,7 +29,7 @@ def scrape_emojis(psql_engine: ViktorPSQLClient, log: logger):
         try:
             emo_id = int(emo_id)
         except ValueError:
-            log.warning(f'Wasn\'t able to convert this emoji id into integer: "{emo_id}"')
+            logger.warning(f'Wasn\'t able to convert this emoji id into integer: "{emo_id}"')
             continue
         emo_name = emoji.getchildren()[0].getchildren()[1].text.strip().replace(':', '')
         if emo_id not in prev_emoji_ids:
@@ -44,8 +44,8 @@ def scrape_emojis(psql_engine: ViktorPSQLClient, log: logger):
                 )
     # Add the emojis to the table
     if len(new_emojis) > 0:
-        log.debug(f'Adding {len(new_emojis)} new potential emojis to the db.')
+        logger.debug(f'Adding {len(new_emojis)} new potential emojis to the db.')
         with psql_engine.session_mgr() as session:
             session.add_all(new_emojis)
     else:
-        log.debug('No new emojis found to upload.')
+        logger.debug('No new emojis found to upload.')

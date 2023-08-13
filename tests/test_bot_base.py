@@ -4,12 +4,13 @@ from unittest import (
 )
 from unittest.mock import MagicMock
 
-from tests.common import (
+from viktor.bot_base import Viktor
+
+from .common import (
     get_test_logger,
     make_patcher,
     random_string,
 )
-from viktor.bot_base import Viktor
 
 
 class TestViktor(TestCase):

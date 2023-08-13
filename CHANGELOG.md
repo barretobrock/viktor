@@ -14,6 +14,13 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Fixed
 #### Security
 __BEGIN-CHANGELOG__
+ 
+### [2.0.0] - 2023-08-11
+#### Added
+ - Python 3.11 support
+ - More tests
+#### Changed
+ - Leverage pukr for primary logger object 
 
 ### [1.7.1] - 2022-07-31
 #### Added

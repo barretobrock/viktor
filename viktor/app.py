@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+from pathlib import Path
 import signal
 from typing import Union
 
@@ -8,6 +9,7 @@ from flask import (
     make_response,
     request,
 )
+from pukr import get_logger
 import requests
 from slackeventsapi import SlackEventAdapter
 from slacktools.api.events.emoji_changed import (
@@ -36,7 +38,6 @@ from viktor.core.pin_collector import collect_pins
 from viktor.core.user_changes import extract_user_change
 from viktor.crons import cron
 from viktor.db_eng import ViktorPSQLClient
-from viktor.logg import get_base_logger
 from viktor.model import (
     TableEmoji,
     TableQuote,
@@ -44,11 +45,11 @@ from viktor.model import (
 from viktor.settings import auto_config
 
 bot_name = auto_config.BOT_NICKNAME
-logg = get_base_logger()
+logg = get_logger(log_file_name='viktor', log_dir_path=Path().home().joinpath('logs/viktor'))
 
-credstore = SecretStore('secretprops-davaiops.kdbx')
+credstore = SecretStore('secretprops-okr.kdbx')
 # Set up database connection
-conn_dict = credstore.get_entry(f'davaidb-{auto_config.ENV.lower()}').custom_properties
+conn_dict = credstore.get_entry(f'okrdb-{auto_config.ENV.lower()}').custom_properties
 vik_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Starting up app...')

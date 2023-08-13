@@ -8,7 +8,7 @@ from viktor import (
 class Common(object):
     """Configuration items common across all config types"""
 
-    BOT_FIRST_NAME = 'Viktor Boborkadork Ivanovich'
+    BOT_FIRST_NAME = 'Viktor Borkborkadork Ivanovich'
     BOT_NICKNAME = 'viktor'
     ADMINS = ['UM35HE6R5']
 

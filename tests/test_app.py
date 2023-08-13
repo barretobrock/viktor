@@ -3,7 +3,7 @@ from unittest import (
     main,
 )
 
-from tests.common import get_test_logger
+from .common import get_test_logger
 
 
 class TestApp(TestCase):

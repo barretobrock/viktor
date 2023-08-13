@@ -89,7 +89,7 @@ class ETL:
         vik_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
         if incl_services:
             self.gsr = GSheetAgent(sec_store=credstore, sheet_key=vik_creds.spreadsheet_key)
-            self.st = SlackTools(bot_cred_entry=vik_creds, parent_log=self.log, use_session=False)
+            self.st = SlackTools(bot_cred_entry=vik_creds, use_session=False)
             self.log.debug('Completed loading services')
 
     def etl_bot_settings(self):
@@ -142,16 +142,16 @@ class ETL:
         roles = self.gsr.get_sheet('okr_roles')
         usr_tbls = []
         for user in users:
-            display_name = user['display_name']
-            real_name = user['real_name']
+            display_name = user.profile.display_name
+            real_name = user.real_name
             display_name = real_name if display_name == '' else display_name
-            uid = user['id']
+            uid = user.id
             role_row = roles.loc[roles['user'] == uid, :]
             params = dict(
                 slack_user_hash=uid,
                 real_name=real_name,
                 display_name=display_name,
-                avatar_link=user['avi']
+                avatar_link=user.profile.image_72
             )
             if not role_row.empty:
                 params.update({
@@ -310,7 +310,7 @@ class ETL:
                 pins_resp = {'items': []}
             pins = pins_resp.get('items')
             for pin in pins:
-                tbl_objs.append(collect_pins(pin, psql_client=self.psql_client, log=self.log))
+                tbl_objs.append(collect_pins(pin, psql_client=self.psql_client, log=self.log, is_event=False))
             # Wait so we don't exceed call limits
             if prev_len < len(tbl_objs):
                 self.log.debug('Cooling off')

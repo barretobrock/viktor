@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Union
+from zoneinfo import ZoneInfo
 
 from loguru import logger
-import pytz
 from slacktools.api.events.pin_added_or_removed import PinEvent
 from slacktools.api.web.pins import PinApiObject
 from sqlalchemy.engine.row import Row
@@ -22,7 +22,7 @@ from viktor.model import (
 def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQLClient, log: logger,
                  is_event: bool) -> TableQuote:
     """Attempts to load pinned message into the quotes db"""
-    us_ct = pytz.timezone('US/Central')
+    us_ct = ZoneInfo('US/Central')
     if is_event:
         pin_obj: PinEvent
         pin_item = pin_obj.item.message
@@ -68,6 +68,7 @@ def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQL
     log.debug('Adding pinned message to table...')
 
     text = pin_item.text
+    # TODO: 'Files' from pin object docs in slack tools
     files = pin_item.files
     if files is not None:
         for file in files:
@@ -78,6 +79,7 @@ def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQL
             text += att.get('image_url')
     log.debug(f'Passing text: "{text[:10]}"')
     with psql_client.session_mgr() as session:
+        # TODO: 'channel' missing from pin object docs in slack tools
         channel_key = session.query(TableSlackChannel.channel_id).filter(
             TableSlackChannel.slack_channel_hash == pin_item.channel
         ).one_or_none()
