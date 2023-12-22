@@ -6,8 +6,13 @@ from typing import (
 )
 
 from loguru import logger
-from slacktools import BlockKitBuilder as BKitB
 from slacktools import SlackBotBase
+from slacktools.block_kit.base import BlocksType
+from slacktools.block_kit.blocks import (
+    DividerBlock,
+    MarkdownContextBlock,
+    MarkdownSectionBlock,
+)
 from sqlalchemy.orm import Session
 
 from viktor.db_eng import ViktorPSQLClient
@@ -88,18 +93,18 @@ def process_user_changes(session: Session, user: TableSlackUser, log: logger) ->
     return None
 
 
-def build_profile_diff(blocks: List[Dict], updated_user_dict: Dict) -> List[Dict]:
+def build_profile_diff(blocks: BlocksType, updated_user_dict: Dict) -> BlocksType:
     """Builds a diff of profile changes for rendering via Block Kit"""
     for attr in ALL_IMPORTANT_ATTRS:
         if attr not in updated_user_dict.keys():
             continue
         blocks += [
-            BKitB.make_context_block([BKitB.markdown_section(attr.title())]),
-            BKitB.make_section_block(BKitB.markdown_section(
+            MarkdownContextBlock(attr.title()),
+            MarkdownSectionBlock(
                 f"NEW:\n\t{updated_user_dict.get(attr).get('new')}\n\n"
                 f"OLD:\n\t{updated_user_dict.get(attr).get('old')}"
-            )),
-            BKitB.make_divider_block()
+            ),
+            DividerBlock()
         ]
     return blocks
 
@@ -117,9 +122,8 @@ def process_updated_profiles(eng: ViktorPSQLClient, st: SlackBotBase, log: logge
     if len(updated_users) > 0:
         for updated_user in updated_users:
             blocks = [
-                BKitB.make_context_block([BKitB.markdown_section(f'*`{updated_user["user_hashname"]}`* '
-                                                                 f'changed their profile info recently!')]),
-                BKitB.make_divider_block()
+                MarkdownContextBlock(f'*`{updated_user["user_hashname"]}`* changed their profile info recently!'),
+                DividerBlock()
             ]
             blocks = build_profile_diff(blocks=blocks, updated_user_dict=updated_user)
             st.send_message(channel=st.main_channel, message='user profile update!',

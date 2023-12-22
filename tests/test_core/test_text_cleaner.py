@@ -1,9 +1,9 @@
+from io import StringIO
 from unittest import (
     TestCase,
     main,
 )
 from unittest.mock import MagicMock
-from io import StringIO
 
 from viktor.core.text_cleaner import XPathExtractor
 

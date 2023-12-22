@@ -19,6 +19,8 @@ __BEGIN-CHANGELOG__
 #### Added
  - Python 3.11 support
  - More tests
+ - Slacktools 2.0 support
+ - Slack Bolt/SDK support
 #### Changed
  - Leverage pukr for primary logger object 
 

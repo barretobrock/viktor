@@ -13,7 +13,11 @@ from typing import (
 )
 
 import requests
-from slacktools import BlockKitBuilder as BKitB
+from slacktools.block_kit.base import BlocksType
+from slacktools.block_kit.blocks import (
+    MarkdownSectionBlock,
+    PlainTextHeaderBlock,
+)
 from slacktools.slack_input_parser import SlackInputParser
 from sqlalchemy.sql import (
     and_,
@@ -356,7 +360,7 @@ class PhraseBuilders:
         if resp.status_code == 200:
             return resp.json().get('insult')
 
-    def facts(self, category: ResponseCategory = ResponseCategory.STANDARD) -> Union[str, List[Dict]]:
+    def facts(self, category: ResponseCategory = ResponseCategory.STANDARD) -> Union[str, BlocksType]:
         """Gives the user a random fact at their request"""
         # Extract all related words from db
         with self.eng.session_mgr() as session:
@@ -373,8 +377,8 @@ class PhraseBuilders:
         fact_header = f'{"Official" if category == ResponseCategory.STANDARD else "Conspiracy"} fact #{rf_id}'
 
         return [
-            BKitB.make_header_block(fact_header),
-            BKitB.make_section_block(BKitB.markdown_section(randfact.text))
+            PlainTextHeaderBlock(fact_header),
+            MarkdownSectionBlock(randfact.text)
         ]
 
     def conspiracy_fact(self) -> Union[str, List[Dict]]:

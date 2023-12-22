@@ -27,7 +27,7 @@ class ViktorPSQLClient(PSQLClient):
     def get_bot_setting(self, setting: BotSettingType) -> Optional[Union[int, bool]]:
         """Attempts to return a given bot setting"""
         with self.session_mgr() as session:
-            result = session.query(TableBotSetting).filter(TableBotSetting.setting_name == setting).one_or_none()
+            result = session.query(TableBotSetting).filter(TableBotSetting.setting_type == setting).one_or_none()
             if result is None:
                 return result
             if setting.name.startswith('IS_'):
@@ -38,7 +38,7 @@ class ViktorPSQLClient(PSQLClient):
     def set_bot_setting(self, setting: BotSettingType, setting_val: Union[int, bool]):
         """Attempts to set a given setting"""
         with self.session_mgr() as session:
-            session.query(TableBotSetting).filter(TableBotSetting.setting_name == setting).update(
+            session.query(TableBotSetting).filter(TableBotSetting.setting_type == setting).update(
                 {TableBotSetting.setting_int: setting_val}
             )
 

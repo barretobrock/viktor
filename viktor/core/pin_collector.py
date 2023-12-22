@@ -3,8 +3,11 @@ from typing import Union
 from zoneinfo import ZoneInfo
 
 from loguru import logger
-from slacktools.api.events.pin_added_or_removed import PinEvent
-from slacktools.api.web.pins import PinApiObject
+from slacktools.api.events.pin import (
+    PinAdded,
+    PinRemoved,
+)
+from slacktools.api.web.pins import Pin
 from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import (
     func,
@@ -19,16 +22,16 @@ from viktor.model import (
 )
 
 
-def collect_pins(pin_obj: Union[PinEvent, PinApiObject], psql_client: ViktorPSQLClient, log: logger,
+def collect_pins(pin_obj: Union[PinAdded, PinRemoved, Pin], psql_client: ViktorPSQLClient, log: logger,
                  is_event: bool) -> TableQuote:
     """Attempts to load pinned message into the quotes db"""
     us_ct = ZoneInfo('US/Central')
     if is_event:
-        pin_obj: PinEvent
+        pin_obj: Union[PinAdded, PinRemoved]
         pin_item = pin_obj.item.message
         pin_ts = pin_obj.event_ts
     else:
-        pin_obj: PinApiObject
+        pin_obj: Pin
         pin_item = pin_obj.message
         pin_ts = pin_obj.created
     author_uid = pin_item.user

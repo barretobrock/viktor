@@ -6,7 +6,7 @@ from typing import (
     List,
 )
 
-from loguru import logger
+from pukr import get_logger
 from slack.errors import SlackApiError
 from slacktools import (
     SecretStore,
@@ -35,7 +35,10 @@ from viktor.model import (
     TableSlackUserChangeLog,
     TableUwu,
 )
-from viktor.settings import auto_config
+from viktor.settings import (
+    Development,
+    Production,
+)
 
 
 class ETL:
@@ -64,13 +67,18 @@ class ETL:
     DENY_LIST_CHANNELS = [IMPO_CHANNEL, CAH_CHANNEL]
 
     def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
-        self.log = logger.bind(sink=sys.stdout, level='DEBUG')
+        self.log = get_logger()
         self.log.debug('Obtaining credential file...')
-        credstore = SecretStore('secretprops-davaiops.kdbx')
+        if env.upper() == 'PROD':
+            Production.load_secrets()
+            props = Production.SECRETS
+        else:
+            Development.load_secrets()
+            props = Development.SECRETS
 
         self.log.debug('Opening up the database...')
-        db_props = credstore.get_entry(f'davaidb-{env}').custom_properties
-        self.psql_client = ViktorPSQLClient(props=db_props, parent_log=self.log)
+
+        self.psql_client = ViktorPSQLClient(props=props, parent_log=self.log)
 
         # Determine tables to drop
         self.log.debug(f'Working on tables: {tables} from db...')
@@ -85,11 +93,12 @@ class ETL:
         self.log.debug(f'Creating {len(tbl_objs)} listed tables...')
         Base.metadata.create_all(self.psql_client.engine, tables=tbl_objs)
 
-        self.log.debug('Authenticating credentials for services...')
-        vik_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
         if incl_services:
+            self.log.debug('Authenticating credentials for services...')
+            credstore = SecretStore('secretprops-davaiops.kdbx')
+            vik_creds = credstore.get_key_and_make_ns(Development.BOT_NICKNAME)
             self.gsr = GSheetAgent(sec_store=credstore, sheet_key=vik_creds.spreadsheet_key)
-            self.st = SlackTools(bot_cred_entry=vik_creds, use_session=False)
+            self.st = SlackTools(props=props, main_channel=Development.MAIN_CHANNEL, use_session=False)
             self.log.debug('Completed loading services')
 
     def etl_bot_settings(self):
@@ -97,7 +106,7 @@ class ETL:
         bot_settings = []
         for bot_setting in list(BotSettingType):
             value = 1 if bot_setting.name.startswith('IS_') else 0
-            bot_settings.append(TableBotSetting(setting_name=bot_setting, setting_int=value))
+            bot_settings.append(TableBotSetting(setting_type=bot_setting, setting_int=value))
 
         with self.psql_client.session_mgr() as session:
             self.log.debug(f'Adding {len(bot_settings)} bot settings.')
@@ -151,7 +160,7 @@ class ETL:
                 slack_user_hash=uid,
                 real_name=real_name,
                 display_name=display_name,
-                avatar_link=user.profile.image_72
+                avatar_link=user.profile.image_32
             )
             if not role_row.empty:
                 params.update({

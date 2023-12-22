@@ -3,7 +3,7 @@ from unittest import (
     main,
 )
 
-from slacktools.block_kit import BlockKitBuilder as BKitB
+from slacktools.block_kit.blocks import PlainTextHeaderBlock
 
 from viktor.core.user_changes import build_profile_diff
 
@@ -14,7 +14,7 @@ class TestUserChanges(TestCase):
         # Set Variables
         # -------------------------------------------------------------------------------------------------------------
         initial_blocks = [
-            BKitB.make_header_block(text='Something')
+            PlainTextHeaderBlock('Something').asdict()
         ]
         updated_user_dict = {
             'display_name': {

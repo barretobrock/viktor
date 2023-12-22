@@ -3,8 +3,6 @@
 from io import StringIO
 import re
 from typing import (
-    Dict,
-    List,
     Optional,
     Tuple,
     Union,
@@ -14,7 +12,11 @@ import urllib.parse as parse
 from lxml import etree
 import numpy as np
 import requests
-from slacktools import BlockKitBuilder as BKitB
+from slacktools.block_kit.base import BlocksType
+from slacktools.block_kit.blocks import (
+    MarkdownSectionBlock,
+    PlainTextHeaderBlock,
+)
 
 
 class Linguistics:
@@ -37,7 +39,7 @@ class Linguistics:
         return tree
 
     @classmethod
-    def get_etymology(cls, message: str, pattern: str) -> Union[str, List[Dict]]:
+    def get_etymology(cls, message: str, pattern: str) -> Union[str, BlocksType]:
         """Grabs the etymology of a word from Etymonline"""
         def extract_text(parent_elem: etree.ElementBase, xpath_str: str) -> str:
             final_results = []
@@ -70,10 +72,10 @@ class Linguistics:
         results = content.xpath('//div[contains(@class, "word--C9UPa")]')[:3]
         output = []
         if len(results) > 0:
-            output.append(BKitB.make_header_block(f'Etymology of `{word}`'))
+            output.append(PlainTextHeaderBlock(f'Etymology of `{word}`'))
             for result in results:
                 title, text = get_title_and_desc(result)
-                output.append(BKitB.make_section_block(BKitB.markdown_section(f'*`{title}`*\n{text}')))
+                output.append(MarkdownSectionBlock(f'*`{title}`*\n{text}'))
 
         if len(output) > 0:
             return output

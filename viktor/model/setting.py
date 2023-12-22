@@ -24,12 +24,12 @@ class TableBotSetting(Base):
     """
 
     setting_id = Column(Integer, primary_key=True, autoincrement=True)
-    setting_name = Column(Enum(BotSettingType), nullable=False)
+    setting_type = Column(Enum(BotSettingType), nullable=False)
     setting_int = Column(Integer, nullable=False)
 
-    def __init__(self, setting_name: BotSettingType, setting_int: int = 1):
-        self.setting_name = setting_name
+    def __init__(self, setting_type: BotSettingType, setting_int: int = 1):
+        self.setting_type = setting_type
         self.setting_int = setting_int
 
     def __repr__(self) -> str:
-        return f'<TableBotSetting(name={self.setting_name.name}, val={self.setting_int})>'
+        return f'<TableBotSetting(name={self.setting_type.name}, val={self.setting_int})>'

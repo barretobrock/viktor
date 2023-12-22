@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest import (
     TestCase,
     main,
@@ -18,13 +19,27 @@ class TestViktor(TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.log = get_test_logger()
+        cls.viktor = None
 
     def setUp(self) -> None:
         self.mock_eng = MagicMock(name='PSQLClient')
-        self.mock_creds = MagicMock(name='bot_cre_entry')
+        self.mock_session = self.mock_eng.session_mgr.return_value.__enter__.return_value
+
+        self.mock_config = MagicMock(name='config')
+        self.mock_config.UPDATE_DATE = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+
+        self.mock_creds = {
+            'team': 't;a',
+            'xoxp-token': random_string(),
+            'xoxb-token': 'al;dskj',
+            'spreadsheet-key': random_string(),
+            'onboarding-key': random_string(),
+        }
         self.mock_slack_base = make_patcher(self, 'viktor.bot_base.SlackBotBase')
+
         self.command_builder_control(is_on=self._testMethodName == 'test_init')
-        self.viktor = Viktor(eng=self.mock_eng, bot_cred_entry=self.mock_creds, parent_log=self.log)
+        if self.viktor is None:
+            self.viktor = Viktor(eng=self.mock_eng, props=self.mock_creds, parent_log=self.log, config=self.mock_config)
 
     def command_builder_control(self, is_on: bool = False):
         """This can get fairly verbose, so we'll turn this off for most test cases"""
@@ -52,7 +67,7 @@ class TestViktor(TestCase):
                 },
                 'check_call': {
                     'call': self.viktor.update_user_ltips,
-                    'args': [channel, self.viktor.approved_users[0]],
+                    'args': [channel, self.viktor.admins[0]],
                     'kwargs': dict(target_user=user, ltits=3 - 5000)
                 }
             },

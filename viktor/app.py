@@ -1,258 +1,100 @@
-from datetime import datetime
-import json
-from pathlib import Path
 import signal
-from typing import Union
 
 from flask import (
     Flask,
-    make_response,
+    jsonify,
     request,
 )
-from pukr import get_logger
-import requests
-from slackeventsapi import SlackEventAdapter
-from slacktools.api.events.emoji_changed import (
-    EmojiAdded,
-    EmojiRemoved,
-    EmojiRenamed,
-    decide_emoji_event_class,
+from pukr import (
+    InterceptHandler,
+    get_logger,
 )
-from slacktools.api.events.pin_added_or_removed import PinEvent
-from slacktools.api.events.reaction_added_or_removed import ReactionEvent
-from slacktools.api.events.types import (
-    EventWrapperType,
-    StandardMessageEventType,
-    ThreadedMessageEventType,
-)
-from slacktools.api.slash.slash import SlashCommandEventType
-from slacktools.secretstore import SecretStore
-from sqlalchemy.sql import (
-    and_,
-    func,
-    not_,
-)
+from werkzeug.exceptions import HTTPException
+from werkzeug.http import HTTP_STATUS_CODES
 
 from viktor.bot_base import Viktor
-from viktor.core.pin_collector import collect_pins
-from viktor.core.user_changes import extract_user_change
-from viktor.crons import cron
 from viktor.db_eng import ViktorPSQLClient
-from viktor.model import (
-    TableEmoji,
-    TableQuote,
+from viktor.flask_base import db
+from viktor.routes.actions import bp_actions
+from viktor.routes.crons import bp_crons
+from viktor.routes.events import bp_events
+from viktor.routes.helpers import (
+    get_app_logger,
+    log_after,
+    log_before,
 )
-from viktor.settings import auto_config
+from viktor.routes.main import bp_main
+from viktor.routes.slash import bp_slash
+from viktor.settings import Production
 
-bot_name = auto_config.BOT_NICKNAME
-logg = get_logger(log_file_name='viktor', log_dir_path=Path().home().joinpath('logs/viktor'))
-
-credstore = SecretStore('secretprops-okr.kdbx')
-# Set up database connection
-conn_dict = credstore.get_entry(f'okrdb-{auto_config.ENV.lower()}').custom_properties
-vik_creds = credstore.get_key_and_make_ns(bot_name)
-
-logg.debug('Starting up app...')
-app = Flask(__name__)
-app.register_blueprint(cron, url_prefix='/cron')
-
-eng = ViktorPSQLClient(props=conn_dict, parent_log=logg)
-
-logg.debug('Instantiating bot...')
-Bot = Viktor(eng=eng, bot_cred_entry=vik_creds, parent_log=logg)
-
-# Register the cleanup function as a signal handler
-signal.signal(signal.SIGINT, Bot.cleanup)
-signal.signal(signal.SIGTERM, Bot.cleanup)
-
-# Events API listener
-bot_events = SlackEventAdapter(vik_creds.signing_secret, "/api/events", app)
+ROUTES = [
+    bp_actions,
+    bp_crons,
+    bp_events,
+    bp_main,
+    bp_slash
+]
 
 
-@app.route('/api/actions', methods=['GET', 'POST'])
-@logg.catch
-def handle_action():
-    """Handle a response when a user clicks a button from a form Slack"""
-    event_data = json.loads(request.form["payload"])
-    user = event_data['user']['id']
-    # if channel empty, it's a shortcut
-    if event_data.get('channel') is None:
-        # shortcut - grab callback, put in action dict according to expected ac
-        action = {
-            'action_id': event_data.get('callback_id'),
-            'action_value': '',
-            'type': 'shortcut'
-        }
-        channel = auto_config.MAIN_CHANNEL
-    elif event_data.get('actions') is None:
-        # Most likely a 'message-shortcut' (e.g., from message menu)
-        action = {
-            'action_id': event_data.get('callback_id'),
-            'action_value': '',
-            'type': 'message-shortcut'
-        }
-        channel = auto_config.MAIN_CHANNEL
-    else:
-        # Action from button click, etc...
-        channel = event_data['channel']['id']
-        actions = event_data['actions']
-        # Not sure if we'll ever receive more than one action?
-        action = actions[0]
-    # Send that info onwards to determine how to deal with it
-    Bot.process_incoming_action(user, channel, action_dict=action, event_dict=event_data)
+def handle_err(err):
+    _log = get_app_logger()
+    _log.error(err)
+    if err.code == 404:
+        _log.error(f'Path requested: {request.path}')
 
-    # Respond to the initial message and update it
-    update_dict = {
-        'replace_original': True,
-        'text': 'boop boop...beep?'
-    }
-    if event_data.get('container', {'is_ephemeral': False}).get('is_ephemeral', False):
-        update_dict['response_type'] = 'ephemeral'
-    response_url = event_data.get('response_url')
-    if response_url is not None:
-        # Update original message
-        if 'shortcut' not in action.get('type'):
-            _ = requests.post(event_data['response_url'], json=update_dict,
-                              headers={'Content-Type': 'application/json'})
-
-    # Send HTTP 200 response with an empty body so Slack knows we're done
-    return make_response('', 200)
+    if isinstance(err, HTTPException):
+        err_msg = getattr(err, 'description', HTTP_STATUS_CODES.get(err.code, ''))
+        return jsonify({'message': err_msg}), err.code
+    if not getattr(err, 'message', None):
+        return jsonify({'message': 'Server has encountered an error.'}), 500
+    return jsonify(**err.kwargs), err.http_status_code
 
 
-@bot_events.on('reaction_added')
-@logg.catch
-def reaction(event_data: EventWrapperType):
-    event = ReactionEvent(event_data['event'])
+def create_app(*args, **kwargs) -> Flask:
+    config_class = kwargs.pop('config_class', Production)
+    props = kwargs.pop('props')
 
-    # This is the timestamp of the reaction
-    # react_ts = event.event_ts
-    # This is the timestamp of the message
-    msg_ts = event.item.ts
-    unique_event_key = f'{event.item.channel}|{event.user}|{msg_ts}|{datetime.now():%F %H}'
-    if unique_event_key in Bot.state_store['reacts']:
-        # Event's already been processed
-        logg.debug(f'Bypassing react to preexisting event key: {unique_event_key}')
-        return make_response('', 200)
-    else:
-        # Store new react event first
-        logg.debug(f'Registering react in {event.item.channel}: {unique_event_key}')
-        Bot.state_store['reacts'].add(unique_event_key)
+    app = Flask(__name__, static_url_path='/')
+    app.config.from_object(config_class)
 
-    channel_obj = eng.get_channel_from_hash(channel_hash=event.item.channel)
+    # Initialize database ops
+    db.init_app(app)
 
-    with eng.session_mgr() as session:
-        logg.debug('Counting react in db...')
-        session.query(TableEmoji).filter(TableEmoji.name == event.reaction).update({
-            'reaction_count': TableEmoji.reaction_count + 1
-        })
-        logg.debug('Determining if channel allows bot reactions')
-        if channel_obj is not None and not channel_obj.is_allow_bot_react:
-            logg.debug('Channel is denylisted for bot reactions. Do nothing...')
-            # Channel doesn't allow reactions
-            return make_response('', 200)
-    if event.user in [Bot.bot_id, Bot.user_id]:
-        logg.debug('Bypassing bot react...')
-        # Don't allow this infinite loop
-        return make_response('', 200)
+    # Initialize logger
+    logg = get_logger(config_class.BOT_NICKNAME, log_dir_path=config_class.LOG_DIR, show_backtrace=config_class.DEBUG,
+                      base_level=config_class.LOG_LEVEL)
+    logg.info('Logger started. Binding to app handler...')
+    app.logger.addHandler(InterceptHandler(logger=logg))
+    # Bind logger so it's easy to call from app object in routes
+    app.extensions.setdefault('logg', logg)
 
-    try:
-        with eng.session_mgr() as session:
-            logg.debug('Randomly selecting an emoji to react with.')
-            emoji = session.query(TableEmoji).filter(not_(TableEmoji.is_react_denylisted)).\
-                order_by(func.random()).limit(1).one()
-            _ = Bot.st.bot.reactions_add(channel=event.item.channel, name=emoji.name, timestamp=msg_ts)
-        return make_response('', 200)
-    except Exception:
-        # Sometimes we'll get a 'too_many_reactions' error. Disregard in that case
-        pass
+    # Register routes
+    logg.info('Registering routes...')
+    for ruut in ROUTES:
+        app.register_blueprint(ruut)
 
+    for err_code, name in HTTP_STATUS_CODES.items():
+        if err_code >= 400:
+            try:
+                app.register_error_handler(err_code, handle_err)
+            except ValueError:
+                pass
 
-@bot_events.on('message')
-@logg.catch
-def scan_message(event_data: Union[StandardMessageEventType, ThreadedMessageEventType]):
-    Bot.process_event(event_data)
+    app.config['db'] = db
 
+    # Set up database connection
+    logg.debug('Initializing db engine...')
+    eng = ViktorPSQLClient(props=props, parent_log=logg)
+    app.extensions.setdefault('eng', eng)
 
-@app.route('/api/slash', methods=['GET', 'POST'])
-@logg.catch
-def handle_slash():
-    """Handles a slash command"""
-    event_data = request.form  # type: SlashCommandEventType
-    # Handle the command
-    Bot.process_slash_command(event_data)
+    logg.debug('Instantiating bot...')
+    bot = Viktor(eng=eng, props=props, config=config_class, parent_log=logg)
+    # Register the cleanup function as a signal handler
+    signal.signal(signal.SIGINT, bot.cleanup)
+    signal.signal(signal.SIGTERM, bot.cleanup)
+    app.extensions.setdefault('bot', bot)
 
-    # Send HTTP 200 response with an empty body so Slack knows we're done
-    return make_response('', 200)
+    app.before_request(log_before)
+    app.after_request(log_after)
 
-
-@bot_events.on('emoji_changed')
-@logg.catch
-def record_new_emojis(event_data: EventWrapperType):
-    event = decide_emoji_event_class(event_dict=event_data['event'])
-    # Make a post about a new emoji being added in the #emoji_suggestions channel
-    logg.debug(f'Emoji change detected: {event.subtype}')
-    match event.subtype:
-        case 'add':
-            event: EmojiAdded
-            logg.debug('Attempting to add new emoji')
-            with eng.session_mgr() as session:
-                session.add(TableEmoji(name=event.name))
-        case 'rename':
-            event: EmojiRenamed
-            logg.debug('Attempting to rename an emoji.')
-            with eng.session_mgr() as session:
-                session.query(TableEmoji).filter(TableEmoji.name == event.old_name).update({'name': event.new_name})
-        case 'remove':
-            event: EmojiRemoved
-            logg.debug('Attempting to remove an emoji')
-            with eng.session_mgr() as session:
-                session.query(TableEmoji).filter(TableEmoji.name.in_(event.names)).update({'is_deleted': True})
-
-
-@bot_events.on('pin_added')
-@logg.catch
-def store_pins(event_data: EventWrapperType):
-    pin_obj = PinEvent(event_dict=event_data['event'])
-    tbl_obj = collect_pins(pin_obj=pin_obj, psql_client=eng, log=logg, is_event=True)
-    # Add to db
-    with eng.session_mgr() as session:
-        matches = session.query(TableQuote).filter(and_(
-            TableQuote.message_timestamp == tbl_obj.message_timestamp,
-            TableQuote.link == tbl_obj.link
-        )).all()
-        if len(matches) == 0:
-            logg.debug('No duplicates found for item - proceeding with pin')
-            session.add(tbl_obj)
-            msg = 'Pin successfully added, kommanderovnik o7'
-        else:
-            logg.debug(f'{len(matches)} quote item(s) with duplicate link and message timestamp found '
-                       f'- aborting pin')
-            msg = 'o7 KOMMANDEROVNIK! ...pin... was not added...  I... have failed you.'
-
-    Bot.st.send_message(channel=pin_obj.item.message.channel, message=msg)
-
-
-@bot_events.on('pin_removed')
-@logg.catch
-def remove_pins(event_data: EventWrapperType):
-    pin_obj = PinEvent(event_dict=event_data['event'])
-    tbl_obj = collect_pins(pin_obj=pin_obj, psql_client=eng, log=logg, is_event=True)
-    # Add to db
-    with eng.session_mgr() as session:
-        session.query(TableQuote).filter(and_(
-            TableQuote.message_timestamp == tbl_obj.message_timestamp,
-            TableQuote.link == tbl_obj.link
-        )).update({TableQuote.is_deleted: True})
-
-    Bot.st.send_message(channel=pin_obj.item.message.channel,
-                        message='Pin successfully removed, kommanderovnik o7')
-
-
-@bot_events.on('user_change')
-@logg.catch
-def notify_new_statuses(event_data: EventWrapperType):
-    """Triggered when a user updates their profile info. Gets saved to global dict
-    where we then report it in #general"""
-    event = event_data['event']
-    user_info = event['user']
-    extract_user_change(eng=eng, user_info_dict=user_info, log=logg)
+    return app

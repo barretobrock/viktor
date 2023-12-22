@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
-
-os.environ['VIKTOR_ENV'] = "DEVELOPMENT"
-from viktor.app import app
-
-
-@app.route('/')
-def index():
-    return 'VIKTOR'
-
+from viktor.settings.config import Development
 
 if __name__ == '__main__':
-    app.run(port=5003)
+    Development.build_db_engine()
+    from viktor.app import create_app
+
+    app = create_app(config_class=Development, props=Development.SECRETS)
+    app.run(port=Development.PORT, use_reloader=Development.USE_RELOADER)

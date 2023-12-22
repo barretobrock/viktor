@@ -11,8 +11,8 @@ import re
 import string
 import sys
 import tempfile
-from types import SimpleNamespace
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -25,11 +25,22 @@ from loguru import logger
 import numpy as np
 import pandas as pd
 import requests
-from slack.errors import SlackApiError
-from slacktools import BlockKitBuilder as BKitB
+from slack_sdk.errors import SlackApiError
 from slacktools import SlackBotBase
-from slacktools.api.events.types import AllMessageEventTypes
-from slacktools.api.slash.slash import SlashCommandEventType
+from slacktools.block_kit.base import BlocksType
+from slacktools.block_kit.blocks import (
+    ActionsBlock,
+    MarkdownContextBlock,
+    MarkdownSectionBlock,
+    PlainTextHeaderBlock,
+    PlainTextSectionBlock,
+)
+from slacktools.block_kit.elements.formatters import (
+    DateFormatter,
+    DateFormatType,
+    TextFormatter,
+)
+from slacktools.block_kit.elements.input import ButtonElement
 from slacktools.tools import build_commands
 from sqlalchemy.sql import (
     and_,
@@ -53,28 +64,35 @@ from viktor.model import (
     TableResponse,
     TableSlackUser,
 )
-from viktor.settings import auto_config
+
+if TYPE_CHECKING:
+    from viktor.settings import (
+        Development,
+        Production,
+    )
 
 
 class Viktor(Linguistics, PhraseBuilders, Forms):
     """Handles messaging to and from Slack API"""
 
-    def __init__(self, eng: ViktorPSQLClient, bot_cred_entry: SimpleNamespace,  parent_log: logger):
+    def __init__(self, eng: ViktorPSQLClient, props: Dict, parent_log: logger,
+                 config: Union['Development', 'Production']):
         """
         Args:
 
         """
-        self.bot_name = f'{auto_config.BOT_FIRST_NAME} {auto_config.BOT_LAST_NAME}'
+        self.bot_name = f'{config.BOT_FIRST_NAME} {config.BOT_LAST_NAME}'
         self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.eng = eng
-        self.bot_creds = bot_cred_entry
-        self.triggers = auto_config.TRIGGERS
-        self.main_channel = auto_config.TEST_CHANNEL
-        self.emoji_channel = auto_config.EMOJI_CHANNEL
-        self.general_channel = auto_config.GENERAL_CHANNEL
-        self.approved_users = auto_config.ADMINS
-        self.version = auto_config.VERSION
-        self.update_date = auto_config.UPDATE_DATE
+        self.triggers = config.TRIGGERS
+        self.main_channel = config.TEST_CHANNEL
+        self.emoji_channel = config.EMOJI_CHANNEL
+        self.general_channel = config.GENERAL_CHANNEL
+        self.admins = config.ADMINS
+        self.version = config.VERSION
+        self.update_date = config.UPDATE_DATE
+        self.spreadsheet_key = props['spreadsheet-key']
+        self.onboarding_key = props['onboarding-key']
 
         super().__init__(eng=eng)
 
@@ -84,14 +102,17 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
         # Initate the bot, which comes with common tools for interacting with Slack's API
         self.log.debug('Spinning up SlackBotBase')
-        self.st = SlackBotBase(bot_cred_entry=bot_cred_entry, triggers=self.triggers,
-                               main_channel=self.main_channel, parent_log=self.log, use_session=True)
+        self.is_post_exceptions = self.eng.get_bot_setting(BotSettingType.IS_POST_ERR_TRACEBACK)
+        self.st = SlackBotBase(props=props, triggers=self.triggers, main_channel=self.main_channel,
+                               admins=self.admins, is_post_exceptions=self.is_post_exceptions, debug=config.DEBUG,
+                               use_session=True)
         # Pass in commands to SlackBotBase, where task delegation occurs
         self.log.debug('Patching in commands to SBB...')
         self.st.update_commands(commands=self.commands)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
+        self.generate_intro()
 
         if self.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_STARTUP):
             self.log.debug('IS_ANNOUNCE_STARTUP was enabled, so sending message to main channel')
@@ -106,12 +127,18 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
         self.log.debug(f'{self.bot_name} booted up!')
 
-    def get_bootup_msg(self) -> List[Dict]:
+    def get_bootup_msg(self) -> BlocksType:
+        now = datetime.now()
+        bootup_time_txt = f"{DateFormatType.date_short_pretty.value} at {DateFormatType.time_secs.value}"
+        formatted_bootup_date = DateFormatter.localize_dates(now, bootup_time_txt)
+
+        update_dtt = datetime.strptime(self.update_date, '%Y-%m-%d_%H:%M:%S')
+        update_time_txt = f"{DateFormatType.date_short_pretty.value} at {DateFormatType.time_secs.value}"
+        formatted_update_date = DateFormatter.localize_dates(update_dtt, update_time_txt)
         return [
-            BKitB.make_context_block([
-                BKitB.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted "
-                                       f"up at `{datetime.now():%F %T}`!"),
-                BKitB.markdown_section(f"(updated {self.update_date})")
+            MarkdownContextBlock([
+                f"*{self.bot_name}* *`{self.version}`* booted up {formatted_bootup_date}",
+                f"(updated `{formatted_update_date}`)"
             ])
         ]
 
@@ -123,7 +150,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
     def generate_intro(self) -> List[Dict]:
         """Generates the intro message and feeds it in to the 'help' command"""
-        intro = f"Здравствуйте! I'm *{self.bot_name}* (:Q::regional_indicator_v::Q: for short).\n" \
+        intro = f"Oh hello there! I'm *{self.bot_name}* (:Q::regional_indicator_v::Q: for short).\n" \
                 f"I can help do stuff for you, but you'll need to call my attention first with " \
                 f"*`{'`* or *`'.join(self.triggers)}`*\n Example: *`v! hello`*\nHere's what I can do:"
         avi_url = "https://ca.slack-edge.com/TM1A69HCM-ULV018W73-1a94c7650d97-512"
@@ -140,25 +167,22 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         """Runs just before instance is destroyed"""
         _ = args
         notify_block = [
-            BKitB.make_context_block([
-                BKitB.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
-            ])
+            MarkdownContextBlock(f'{self.bot_name} died. Pour one out `010100100100100101010000`').asdict()
         ]
         if self.eng.get_bot_setting(BotSettingType.IS_ANNOUNCE_SHUTDOWN):
             self.st.message_main_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
         sys.exit(0)
 
-    def process_slash_command(self, event_dict: SlashCommandEventType):
+    def process_slash_command(self, event_dict: Dict):
         """Hands off the slash command processing while also refreshing the session"""
         self.st.parse_slash_command(event_dict)
 
-    def process_event(self, event_dict: AllMessageEventTypes):
+    def process_event(self, event_dict: Dict):
         """Hands off the event data while also refreshing the session"""
         self.st.parse_message_event(event_dict)
 
-    def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict,
-                                ) -> Optional:
+    def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict) -> Optional:
         """Handles an incoming action (e.g., when a button is clicked)"""
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
@@ -172,7 +196,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             game_value = action_value.split('|')[1]
             if game_value.isnumeric():
                 game_value = int(game_value) - 5000
-                resp = self.update_user_ltips(channel, self.approved_users[0], target_user=user, ltits=game_value)
+                resp = self.update_user_ltips(channel, self.admins[0], target_user=user, ltits=game_value)
                 if resp is not None:
                     self.st.send_message(channel, resp, thread_ts=thread_ts)
         elif action_id == 'new-ifact':
@@ -282,28 +306,32 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
     def prebuild_main_menu(self, user_id: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""
-        self.build_main_menu(slack_api=self.st, user=user_id, channel=channel)
+        blocks = self.build_main_menu(user=user_id, channel=channel)
+
+        self.st.private_channel_message(user_id=user_id, channel=channel,
+                                        message='Welcome to the OKR Global Incorporated Ltd. Inc. main menu!',
+                                        blocks=blocks)
 
     # General support methods
     # ====================================================
 
     def show_gsheets_link(self) -> str:
-        return f'https://docs.google.com/spreadsheets/d/{self.bot_creds.spreadsheet_key}/'
+        return f'https://docs.google.com/spreadsheets/d/{self.spreadsheet_key}/'
 
     def show_onboring_link(self) -> str:
-        return f'https://docs.google.com/document/d/{self.bot_creds.onboarding_key}/edit?usp=sharing'
+        return f'https://docs.google.com/document/d/{self.onboarding_key}/edit?usp=sharing'
 
     def get_channel_stats(self, channel: str) -> str:
         """Collects posting stats for a given channel"""
-        msgs = self.st.get_channel_history(channel, limit=1000)
+        chan_hist = self.st.get_channel_history(channel, limit=1000)
         results = {}
 
-        for msg in msgs:
+        for msg in chan_hist.messages:
             try:
-                user = msg['user']
-            except KeyError:
-                user = msg['bot_id']
-            txt_len = len(msg['text'])
+                user = msg.user
+            except AttributeError:
+                user = msg.bot_id
+            txt_len = len(msg.text)
             if user in results.keys():
                 results[user]['msgs'].append(txt_len)
             else:
@@ -325,14 +353,14 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         users = self.st.get_users_info(res_df['user'].tolist(), throw_exception=False)
         user_names = []
         for user in users:
-            uid = user['id']
+            uid = user.id
             try:
-                name = user['profile']['display_name']
+                name = user.profile.display_name
             except KeyError:
-                name = user['real_name']
+                name = user.real_name
 
             if name == '':
-                name = user['real_name']
+                name = user.real_name
             user_names.append({'id': uid, 'display_name': name})
 
         user_names_df = pd.DataFrame(user_names).drop_duplicates()
@@ -343,7 +371,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         res_df['avg_msg_len'] = res_df['avg_msg_len'].round(1)
         res_df = res_df.sort_values('total_messages', ascending=False)
         response = '*Stats for this channel:*\n Total messages examined: {}\n' \
-                   '```{}```'.format(len(msgs), self.st.df_to_slack_table(res_df))
+                   '```{}```'.format(len(chan_hist.messages), self.st.df_to_slack_table(res_df))
         return response
 
     def get_emojis_like(self, match_pattern: str, message: str, max_res: int = 500) -> str:
@@ -459,7 +487,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         return f'The server time is `{datetime.today():%F %T}`'
 
     @staticmethod
-    def wfh_epoch() -> List[dict]:
+    def wfh_epoch() -> BlocksType:
         """Calculates WFH epoch time"""
         wfh_epoch = datetime(year=2020, month=3, day=3, hour=19, minute=15)
         now = datetime.now()
@@ -523,19 +551,10 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 strange_section.append(formatted)
 
         return [
-            BKitB.make_context_block([
-                BKitB.markdown_section('WFH Epoch')
-            ]),
-            BKitB.make_section_block(
-                BKitB.markdown_section(f'Current WFH epoch time is *`{wfh_secs:.0f}`*.\n ({diff})')
-            ),
-            BKitB.make_context_block([
-                BKitB.markdown_section('The time units you\'re used to\n' + '\n'.join(normal_section))
-            ]),
-            BKitB.make_context_block([
-                BKitB.markdown_section('Some time units that might be strange to you\n' +
-                                       '\n'.join(strange_section))
-            ])
+            MarkdownContextBlock('WFH Epoch'),
+            MarkdownContextBlock(f'Current WFH epoch time is *`{wfh_secs:.0f}`*.\n ({diff})'),
+            MarkdownContextBlock('*The time units you\'re used to:*\n' + '\n'.join(normal_section)),
+            MarkdownContextBlock('*Some time units that might be strange to you:*\n' + '\n'.join(strange_section))
         ]
 
     # Misc. methods
@@ -587,23 +606,24 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 neg_values.append(val)
             else:
                 val = 0
-            btn_blocks.append(BKitB.make_button_element(f':{emojis[i - 1]}:', value=f'bg|{val + 5000}',
-                                                        action_id=f'buttongame-{i}'))
+            btn_blocks.append(
+                ButtonElement(f':{emojis[i - 1]}:', value=f'bg|{val + 5000}', action_id=f'buttongame-{i}')
+            )
 
         blocks = [
-            BKitB.make_section_block(
-                BKitB.plaintext_section(':spinny-rainbow-sheep::alphabet-yellow-b::alphabet-yellow-u:'
-                                        ':alphabet-yellow-t::alphabet-yellow-t::alphabet-yellow-o:'
-                                        ':alphabet-yellow-n::blank::alphabet-yellow-g::alphabet-yellow-a:'
-                                        ':alphabet-yellow-m::alphabet-yellow-e::alphabet-yellow-exclamation:'
-                                        ':spinny-rainbow-sheep:')
+            PlainTextSectionBlock(
+                ':spinny-rainbow-sheep::alphabet-yellow-b::alphabet-yellow-u:'
+                ':alphabet-yellow-t::alphabet-yellow-t::alphabet-yellow-o:'
+                ':alphabet-yellow-n::blank::alphabet-yellow-g::alphabet-yellow-a:'
+                ':alphabet-yellow-m::alphabet-yellow-e::alphabet-yellow-exclamation:'
+                ':spinny-rainbow-sheep:'
             ),
-            BKitB.make_context_block([
-                BKitB.markdown_section('Try your luck and guess which button is hiding the LTITs!! '
-                                       f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
-                                       f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.')
-            ]),
-            BKitB.make_actions_block(btn_blocks)
+            MarkdownContextBlock(
+                'Try your luck and guess which button is hiding the LTITs!! '
+                f'Only one value has `{win}` LTITs, {len(neg_values)} others have '
+                f'{",".join([f"`{x}`" for x in neg_values])}. The rest are `0`.'
+            ),
+            ActionsBlock(btn_blocks)
         ]
 
         return blocks
@@ -679,45 +699,42 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             with fartpath.open(mode='wb') as f:
                 f.write(resp.content)
             self.st.upload_file(channel=channel, filepath=fartpath.__str__(), filename='fart.mp3',
-                                txt=f'Ok! Here\'s the recording I took of <@{user}> recently!')
+                                txt='Ok! Here\'s the recording I took of you recently!')
 
     # OKR Methods
     # ------------------------------------------------
-    def onboarding_docs(self) -> List[dict]:
+    def onboarding_docs(self) -> BlocksType:
         """Returns links to everything needed to bring a new OKR employee up to speed"""
         docs = [
-            BKitB.make_section_block(
-                BKitB.plaintext_section(
-                    "Welcome to OKR! We're glad to have you on board!\nCheck out these links below "
-                    "to get familiar with OKR and the industry we support!"
-                )
+            PlainTextSectionBlock(
+                "Welcome to OKR: Guaranteed to have more morality than your current and former workplaces combined!"
+                " We're glad to have you on board. You're family here, and like family, you're stuck with us. Forever."
+                "Just think of the pizza parties!\n\n Anyway, check out these links below "
+                "to get familiar with OKR family that you are now bloodbound to and the industry "
+                "(who knows what that is!) we support!"
             ),
-            BKitB.make_section_block(
-                BKitB.markdown_section(
-                    f"\t<{self.show_onboring_link()}|Onboring Doc>\n"
-                )
-            ),
-            BKitB.make_section_block(
-                BKitB.plaintext_section(
-                    "For any questions, reach out to the CEO or our Head of Recruiting. "
-                    "Don't know who they are? Well, figure it out!"
-                )
+            PlainTextSectionBlock(f'\t{TextFormatter.build_link(self.show_onboring_link(), "Onboring Docs")}'),
+            PlainTextSectionBlock(
+                "For any questions, reach out to literally anyone here! The CEO or our Head of Recruiting might be "
+                "a good start. Don't know who they are? Well, figure it out, fuck-face!"
             )
         ]
         return docs
 
-    def show_all_perks(self) -> List[Dict]:
+    def show_all_perks(self) -> BlocksType:
         """Displays all the perks"""
         with self.eng.session_mgr() as session:
             perks = session.query(TablePerk).all()
             session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
-            BKitB.make_header_block('OKR Perks!'),
-            BKitB.make_context_block([
-                BKitB.markdown_section('you\'ll never see anything better, trust us!')
-            ]),
-            BKitB.make_section_block(BKitB.markdown_section(''.join(p for p in final_perks)))
+            PlainTextHeaderBlock('OKR Perks!'),
+            MarkdownContextBlock(
+                'you\'ll never see anything better, trust us!! '
+                'we want you to want to work here but may or may not be actively trying to get more of you'
+                ' to leave tihihihiiihihi! *boop* *snug*'
+            ),
+            MarkdownSectionBlock(final_perks)
         ]
 
     @staticmethod
@@ -739,7 +756,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             final_perks.append(f'`lvl {level}`: \n\t\t - {formatted_perk_list}\n')
         return final_perks
 
-    def show_my_perks(self, user: str) -> Union[List[Dict], str]:
+    def show_my_perks(self, user: str) -> Union[BlocksType, str]:
         """Lists the perks granted at the user's current level"""
         # Get the user's level
         user_obj = self.eng.get_user_from_hash(user_hash=user)
@@ -755,19 +772,11 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
-            BKitB.make_header_block(f'Perks for our very highly valued `{user_obj.name}`!'),
-            BKitB.make_context_block([
-                BKitB.markdown_section('you\'ll _really_ never see anything better, trust us!')
-            ]),
-            BKitB.make_section_block(
-                BKitB.markdown_section('Here are the _amazing_ perks you have unlocked!!')
-            ),
-            BKitB.make_section_block(
-                BKitB.markdown_section(''.join([p for p in final_perks]))
-            ),
-            BKitB.make_section_block(
-                BKitB.markdown_section(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
-            ),
+            PlainTextHeaderBlock(f'Perks for our very highly valued `{user_obj.name}`!'),
+            MarkdownContextBlock('you\'ll _really_ never see anything better, trust us!'),
+            MarkdownContextBlock('Here are the _amazing_ perks you have unlocked!!'),
+            MarkdownSectionBlock(final_perks),
+            MarkdownSectionBlock(f'...and don\'t forget you have *`{ltits}`* LTITs! That\'s something, too!')
         ]
 
     def new_role_form_p1(self, user: str, channel: str):
@@ -793,7 +802,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
     def update_user_level(self, channel: str, requesting_user: str, target_user: str) -> Optional[str]:
         """Increment the user's level"""
 
-        if requesting_user not in self.approved_users:
+        if requesting_user not in self.admins:
             return 'LOL sorry, levelups are SLT-approved only. If you\'re already SLT, it\'s the _other_ SLT tihi'
 
         if target_user == 'UPLAE3N67':
@@ -812,7 +821,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             Optional[str]:
         """Increment the user's level"""
 
-        if requesting_user not in self.approved_users:
+        if requesting_user not in self.admins:
             return 'LOL sorry, LTIT distributions are SLT-approved only'
 
         user_obj = self.eng.get_user_from_hash(target_user)
@@ -824,7 +833,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         self.st.send_message(
             channel, f'LTITs for  *`{user_obj.name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.')
 
-    def show_roles(self, user: str = None) -> Union[List[Dict], str]:
+    def show_roles(self, user: str = None) -> Union[BlocksType, str]:
         """Prints users roles to channel"""
         def build_employee_info(emp: TableSlackUser) -> str:
             """Build out an individual line of an employee's info"""
@@ -843,24 +852,23 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         if user is None:
             # Printing roles for everyone
             roles_output += [
-                BKitB.make_header_block('OKR Roles'),
-                BKitB.make_context_block([
-                    BKitB.markdown_section('_(as of last reorg)_')
-                ])
+                PlainTextHeaderBlock('OKR Roles'),
+                MarkdownContextBlock('_(as of last reorg)_')
             ]
             # Iterate through roles, print them out
             with self.eng.session_mgr() as session:
                 users = session.query(TableSlackUser).all()
                 session.expunge_all()
-            roles_output += [BKitB.make_section_block(BKitB.markdown_section(build_employee_info(emp=u)))
-                             for u in users]
+            roles_output += [
+                MarkdownSectionBlock(build_employee_info(emp=u)) for u in users
+            ]
         else:
             # Printing role for an individual user
             user_obj = self.eng.get_user_from_hash(user_hash=user)
             if user_obj is None:
                 return f'user <@{user}> not found in HR records... :nervous_peach:'
             roles_output.append(
-                BKitB.make_section_block(BKitB.markdown_section(build_employee_info(emp=user_obj)))
+                MarkdownSectionBlock(build_employee_info(emp=user_obj))
             )
 
         return roles_output

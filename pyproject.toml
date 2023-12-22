@@ -19,14 +19,16 @@ include = ["CHANGELOG.md"]
 python = "^3.10"
 slacktools = {git = "https://github.com/barretobrock/slacktools.git"}
 pukr = { git = "https://github.com/barretobrock/pukr.git", branch = "main" }
-Flask = "~2.3"
-lxml = "~4.9"
-numpy = "~1"
-pandas = "~2"
-pykeepass = "~4"
-requests = "~2"
-slackeventsapi = "~3"
-sqlalchemy = "~2"
+Flask = "^3"
+lxml = "^4"
+Flask-SQLAlchemy = "^3"
+numpy = "^1"
+pandas = "^2"
+psycopg2 = "^2"
+pykeepass = "^4"
+requests = "^2"
+slack_bolt = "^1"
+werkzeug = "^3"
 # Optional dependencies would go down here
 # example = { version = ">=1.7.0", optional = true }
 
