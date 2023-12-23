@@ -17,6 +17,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Set,
     Union,
 )
 from urllib.parse import urlparse
@@ -27,6 +28,7 @@ import pandas as pd
 import requests
 from slack_sdk.errors import SlackApiError
 from slacktools import SlackBotBase
+from slacktools.api.base import BaseApiObject
 from slacktools.block_kit.base import BlocksType
 from slacktools.block_kit.blocks import (
     ActionsBlock,
@@ -44,7 +46,7 @@ from slacktools.block_kit.elements.input import ButtonElement
 from slacktools.tools import build_commands
 from sqlalchemy.sql import (
     and_,
-    func,
+    func
 )
 
 from viktor import ROOT_PATH
@@ -120,7 +122,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
         # Place to temporarily store things. Typical structure is activity -> user -> data
         self.state_store = {
-            'reacts': set(),
+            'react_events': set(),                          # type: Set[str]  # Used to determine unique react events
+            'react-store': self.eng.get_reaction_emojis(),  # type: List[str]   # List of reacts to randomly select
+            'users': self.eng.get_all_users(),              # type: List[TableSlackUser]
             'new-emoji': {},
             'new-ltit-req': {}
         }
@@ -270,6 +274,26 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         else:
             # TODO Otherwise treat the action as a phrase?
             pass
+
+    def uwu_that(self, channel: str, ts: str) -> Union[BlocksType, str]:
+        prev_msg = self.st.get_previous_msg_in_channel(channel=channel, timestamp=ts)
+        blocks = message = None
+        try:
+            blocks = prev_msg.blocks
+        except AttributeError:
+            message = prev_msg.text
+        if blocks is not None:
+            # Convert blocks to uwu
+            replaced_blocks = []
+            for i, block in enumerate(blocks):
+                if isinstance(block, BaseApiObject):
+                    block = block.asdict()
+                replaced_blocks.append(recursive_uwu(i, block, replace_func=self.uwu))
+            return replaced_blocks
+        elif message is not None:
+            return self.uwu(message)
+        else:
+            return self.uwu('I really can\'t work with a message like that. How dare you. Bitch.')
 
     def handle_menu_action_msg_transform_and_send(self, event_dict: Dict, funktsioon: Callable):
         """Stores the process to handle shortcuts through message menu to transform a message with a certain
@@ -713,7 +737,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 "to get familiar with OKR family that you are now bloodbound to and the industry "
                 "(who knows what that is!) we support!"
             ),
-            PlainTextSectionBlock(f'\t{TextFormatter.build_link(self.show_onboring_link(), "Onboring Docs")}'),
+            MarkdownSectionBlock(f'\t{TextFormatter.build_link(self.show_onboring_link(), "Onboring Docs")}'),
             PlainTextSectionBlock(
                 "For any questions, reach out to literally anyone here! The CEO or our Head of Recruiting might be "
                 "a good start. Don't know who they are? Well, figure it out, fuck-face!"
@@ -877,3 +901,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         """Constructs a text blob consisting of roles without exceeding the character limits of Slack"""
         roles_output = self.show_roles(user)
         self.st.send_message(channel, message='Roles output', blocks=roles_output)
+
+    def good_bot(self, user: str) -> str:
+        if user in self.admins:
+            return 'thanks daddy' + '!' * randint(2, 10)
+        return f'thanks, <@{user}>!'
