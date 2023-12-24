@@ -57,8 +57,8 @@ commands:
             response_cmd:
                 callable: prebuild_main_menu
                 args:
-                    - user_id
-                    - channel_id
+                    - user
+                    - channel
         ^add emoji:
             tags:
                 - emoji
@@ -67,14 +67,17 @@ commands:
             response_cmd:
                 callable: add_emoji_form_p1
                 args:
-                    - user_id
-                    - channel_id
+                    - user
+                    - channel
                     - cleaned_message
         good bo[tiy]:
             tags:
                 - random
             desc: Give the bot a little praise
-            response_txt: thanks <@{user_id}>!
+            response_cmd:
+                callable: good_bot
+                args:
+                    - user
         ^(get\s?)?fa[hr]t:
             tags:
                 - random
@@ -82,8 +85,8 @@ commands:
             response_cmd:
                 callable: get_fart
                 args:
-                    - user_id
-                    - channel_id
+                    - user
+                    - channel
         ^time$:
             tags:
                 - debug
@@ -160,7 +163,7 @@ commands:
             response_cmd:
                 callable: show_my_perks
                 args:
-                    - user_id
+                    - user
         ^show all perks:
             tags:
                 - okr
@@ -177,7 +180,7 @@ commands:
             response_cmd:
                 callable: build_role_txt
                 args:
-                    - channel_id
+                    - channel
         ^update (role|doo[td]ies):
             tags:
                 - okr
@@ -187,8 +190,8 @@ commands:
             response_cmd:
                 callable: new_role_form_p1
                 args:
-                    - user_id
-                    - channel_id
+                    - user
+                    - channel
         ^show my (role|doo[td]ie)$:
             tags:
                 - okr
@@ -198,8 +201,8 @@ commands:
             response_cmd:
                 callable: build_role_txt
                 args:
-                    - channel_id
-                    - user_id
+                    - channel
+                    - user
     group-linguistics:
         ^e[nt]\s+:
             tags:
@@ -273,7 +276,7 @@ commands:
             response_cmd:
                 callable: inspirational
                 args:
-                    - channel_id
+                    - channel
         .*tihi.*:
             tags:
                 - random
@@ -296,7 +299,7 @@ commands:
                 callable: randcap
                 args:
                     - cleaned_message
-        ^uwu:
+        ^uwu(?!\s?that):
             tags:
                 - random
             desc: Makes text pwettiew and easiew to uwundewstand (defaults to highest uwu level)
@@ -304,6 +307,16 @@ commands:
                 callable: uwu
                 args:
                     - raw_message
+        ^uwu\s?that:
+            tags:
+                - random
+            desc: Uwu's the previous message in channel/thread
+            response_cmd:
+                callable: uwu_that
+                args:
+                    - channel
+                    - ts
+                    - thread_ts
         (thanks|[no,\s]*\s(t[h]?ank\s?(you|u))):
             tags:
                 - random
@@ -316,7 +329,7 @@ commands:
             tags:
                 - random
             desc: Handle some ridicule...
-            response_txt: ay <@{user_id}> u got some jokes!
+            response_txt: ay <@{user}> u got some jokes!
         ^speak$:
             tags:
                 - random
@@ -391,7 +404,7 @@ commands:
                 args:
                     - raw_message
                     - match_pattern
-                    - user_id
+                    - user
         ^facts?:
             tags:
                 - random
@@ -413,5 +426,13 @@ commands:
             response_cmd:
                 callable: add_ifact_form
                 args:
-                    - user_id
-                    - channel_id
+                    - user
+                    - channel
+    group-admin:
+        ^bot timeout:
+            tags:
+                - admin
+            desc: Prevent someone from lewding the bots
+            response_cmd:
+                callable: bot_timeout_form
+
