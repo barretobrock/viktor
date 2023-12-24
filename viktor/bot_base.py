@@ -29,6 +29,10 @@ import requests
 from slack_sdk.errors import SlackApiError
 from slacktools import SlackBotBase
 from slacktools.api.base import BaseApiObject
+from slacktools.api.web.conversations import (
+    Message,
+    ThreadMessage,
+)
 from slacktools.block_kit.base import BlocksType
 from slacktools.block_kit.blocks import (
     ActionsBlock,
@@ -46,7 +50,7 @@ from slacktools.block_kit.elements.input import ButtonElement
 from slacktools.tools import build_commands
 from sqlalchemy.sql import (
     and_,
-    func
+    func,
 )
 
 from viktor import ROOT_PATH
@@ -87,7 +91,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.eng = eng
         self.triggers = config.TRIGGERS
-        self.main_channel = config.TEST_CHANNEL
+        self.main_channel = config.MAIN_CHANNEL
         self.emoji_channel = config.EMOJI_CHANNEL
         self.general_channel = config.GENERAL_CHANNEL
         self.admins = config.ADMINS
@@ -122,9 +126,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
         # Place to temporarily store things. Typical structure is activity -> user -> data
         self.state_store = {
-            'react_events': set(),                          # type: Set[str]  # Used to determine unique react events
-            'react-store': self.eng.get_reaction_emojis(),  # type: List[str]   # List of reacts to randomly select
-            'users': self.eng.get_all_users(),              # type: List[TableSlackUser]
+            'react-events': set(),                          # type: Set[str]  # Used to determine unique react events
+            'reacts-store': self.eng.get_reaction_emojis(),  # type: List[str]   # List of reacts to randomly select
+            'users': self.eng.get_all_users(),              # type: Dict[str, TableSlackUser]
             'new-emoji': {},
             'new-ltit-req': {}
         }
@@ -178,13 +182,25 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         self.log.info('Bot shutting down...')
         sys.exit(0)
 
+    def toggle_user_bot_timeout(self, user: str) -> Optional[bool]:
+        self.log.debug(f'Handling bot timeout toggle for user {user}')
+        with self.eng.session_mgr() as session:
+            user_obj = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == user).one_or_none()
+            if user_obj is None:
+                self.log.error('User not found in table.')
+                return
+            user_obj.is_in_bot_timeout = not user_obj.is_in_bot_timeout
+            session.expunge(user_obj)
+            self.state_store['users'][user] = user_obj
+        return user_obj.is_in_bot_timeout
+
     def process_slash_command(self, event_dict: Dict):
         """Hands off the slash command processing while also refreshing the session"""
-        self.st.parse_slash_command(event_dict)
+        self.st.parse_slash_command(event_dict, users_dict=self.state_store['users'])
 
     def process_event(self, event_dict: Dict):
         """Hands off the event data while also refreshing the session"""
-        self.st.parse_message_event(event_dict)
+        self.st.parse_message_event(event_dict, users_dict=self.state_store['users'])
 
     def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict) -> Optional:
         """Handles an incoming action (e.g., when a button is clicked)"""
@@ -192,8 +208,12 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         action_value = action_dict.get('value')
         msg = event_dict.get('message', {})
         thread_ts = msg.get('thread_ts')
+
         self.log.debug(f'Receiving action_id: {action_id} and value: {action_value} from user: {user} in '
                        f'channel: {channel}')
+
+        if self.st.check_user_for_bot_timeout(users_dict=self.state_store['users'], uid=user):
+            return None
 
         if 'buttongame' in action_id:
             # Button game stuff
@@ -215,6 +235,16 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                     session.add(user_obj)
                     user_obj.role_desc = action_value
             self.build_role_txt(channel=channel, user=user)
+        elif action_id == 'bot-timeout-user':
+            # Check status of user beforehand
+            selected_user_id = action_dict.get('selected_user')
+            user_obj = self.state_store['users'].get(selected_user_id)
+            if user_obj.is_admin:
+                message = f'Blocked user {user_obj.display_name} from toggling is_in_bot_timeout - they\'re an admin.'
+            else:
+                new_state = self.toggle_user_bot_timeout(user=selected_user_id)
+                message = f'{user_obj.display_name} is_in_bot_timeout toggled to `{new_state}`'
+            self.st.private_channel_message(user_id=user, channel=channel, message=message)
         elif action_id == 'levelup-user':
             self.update_user_level(channel=channel, requesting_user=user,
                                    target_user=action_dict.get('selected_user'))
@@ -275,8 +305,17 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             # TODO Otherwise treat the action as a phrase?
             pass
 
-    def uwu_that(self, channel: str, ts: str) -> Union[BlocksType, str]:
-        prev_msg = self.st.get_previous_msg_in_channel(channel=channel, timestamp=ts)
+    def uwu_that(self, channel: str, ts: str, thread_ts: str = None) -> Union[BlocksType, str]:
+        if thread_ts is None:
+            prev_msg: Message
+            prev_msg = self.st.get_previous_msg_in_channel(channel=channel, timestamp=ts)
+        else:
+            prev_msg: ThreadMessage
+            prev_msg, is_the_only_reply = self.st.get_previous_msg_in_thread(channel=channel, timestamp=ts,
+                                                                             thread_ts=thread_ts)
+            if is_the_only_reply:
+                # Likely the uwu command was the first message in thread, so grab parent message
+                prev_msg = self.st.get_previous_msg_in_channel(channel=channel, timestamp=thread_ts, inclusive=True)
         blocks = message = None
         try:
             blocks = prev_msg.blocks
