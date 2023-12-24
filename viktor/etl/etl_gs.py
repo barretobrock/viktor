@@ -341,6 +341,7 @@ class ETL:
 
 if __name__ == '__main__':
     from viktor.model import TableResponse
+
     # etl = ETL(env='dev')
     # etl.handle_table_drops(tables=ETL.ALL_TABLES, create_only=False)
     # etl.etl_acronyms()

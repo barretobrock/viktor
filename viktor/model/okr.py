@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import (
     List,
-    Union
+    Union,
 )
 
 from sqlalchemy import (
@@ -13,8 +13,8 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
 )
-from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.orm import relationship
 
 # local imports
 from viktor.model.base import Base
