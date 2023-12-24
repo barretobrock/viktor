@@ -85,6 +85,8 @@ class PhraseBuilders:
             # Randomly select 2 graphics
             chars = [x.graphic for x in session.query(TableUwu.graphic).order_by(func.random()).limit(2).all()]
             prefix, suffix = chars
+            prefix = prefix.replace('`', ' ')
+            suffix = suffix.replace('`', ' ')
 
         if level >= 1:
             # Level 1: Letter replacement
@@ -121,7 +123,7 @@ class PhraseBuilders:
             # Last step, insert random characters
             text = f'{prefix} {text} {suffix}'
 
-        return text.replace('`', ' ')
+        return text
 
     @staticmethod
     def _word_result_organiser(word_results: List[TableResponse]) -> \
@@ -392,6 +394,7 @@ class PhraseBuilders:
                 header, footer = [x.graphic for x in session.query(TableUwu.graphic)
                                   .order_by(func.random()).limit(2).all()]
             aff_txt = resp.json().get('affirmation')
+            self.uwu(aff_txt)
             return f'{header} {aff_txt} {footer}'
 
     @staticmethod

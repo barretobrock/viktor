@@ -30,13 +30,17 @@ def collect_pins(pin_obj: Union[PinAdded, PinRemoved, Pin], psql_client: ViktorP
         pin_obj: Union[PinAdded, PinRemoved]
         pin_item = pin_obj.item.message
         pin_ts = pin_obj.event_ts
+        author_name = pin_item.username
+        channel_id = pin_obj.channel_id
     else:
         pin_obj: Pin
         pin_item = pin_obj.message
         pin_ts = pin_obj.created
-    author_uid = pin_item.user
-    author_name = pin_item.username
-    if author_uid is None:
+        author_name = None
+        channel_id = pin_obj.channel
+    try:
+        author_uid = pin_item.user
+    except AttributeError:
         # Try getting bot id
         author_uid = pin_item.bot_id
 
@@ -71,20 +75,31 @@ def collect_pins(pin_obj: Union[PinAdded, PinRemoved, Pin], psql_client: ViktorP
     log.debug('Adding pinned message to table...')
 
     text = pin_item.text
-    # TODO: 'Files' from pin object docs in slack tools
-    files = pin_item.files
-    if files is not None:
-        for file in files:
-            text += f'\n{file.get("url_private")}'
-    if text == '':
-        # Try getting attachment info
-        for att in getattr(pin_item, 'attachments', []):
-            text += att.get('image_url')
+
+    # Try getting file info
+    file_urls_list = []
+    for att in getattr(pin_item, 'files', []):
+        try:
+            pvt_url = getattr(att, 'url_private')
+        except AttributeError:
+            continue
+        if pvt_url is not None:
+            file_urls_list.append(pvt_url)
+
+    # Try getting attachment info
+    img_urls_list = []
+    for att in getattr(pin_item, 'attachments', []):
+        try:
+            img_url = getattr(att, 'image_url')
+        except AttributeError:
+            continue
+        if img_url is not None:
+            img_urls_list.append(img_url)
+
     log.debug(f'Passing text: "{text[:10]}"')
     with psql_client.session_mgr() as session:
-        # TODO: 'channel' missing from pin object docs in slack tools
         channel_key = session.query(TableSlackChannel.channel_id).filter(
-            TableSlackChannel.slack_channel_hash == pin_item.channel
+            TableSlackChannel.slack_channel_hash == channel_id
         ).one_or_none()
         if isinstance(channel_key, Row):
             # Convert to id
@@ -95,6 +110,8 @@ def collect_pins(pin_obj: Union[PinAdded, PinRemoved, Pin], psql_client: ViktorP
         channel_key=channel_key,
         pinner_user_key=pinner.user_id if pinner is not None else None,
         link=pin_item.permalink,
+        image_urls=img_urls_list,
+        file_urls=file_urls_list,
         message_timestamp=datetime.fromtimestamp(float(pin_item.ts), us_ct),
         pin_timestamp=datetime.fromtimestamp(float(pin_ts), us_ct)
     )
