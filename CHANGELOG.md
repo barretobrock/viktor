@@ -15,6 +15,14 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.1] - 2023-12-23
+#### Added
+ - [GH-27](../../issues/27) - Channel table now updated based on channel actions
+ - [GH-29](../../issues/29) - Enable bot timeouts for potential bot abuse
+#### Fixed
+ - [GH-5](../../issues/5) - 'uwu that' now doesn't... uwu 'that'
+ - pin_collector works again
+ 
 ### [2.0.0] - 2023-08-11
 #### Added
  - Python 3.11 support
