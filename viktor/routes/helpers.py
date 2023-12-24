@@ -17,7 +17,7 @@ def get_session():
 
 
 def get_viktor_eng():
-    return current_app.config['eng']
+    return current_app.extensions['eng']
 
 
 def get_app_logger() -> PukrLog:

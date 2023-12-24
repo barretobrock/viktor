@@ -37,6 +37,15 @@ class Forms:
     def cancel_button() -> ButtonElement:
         return ButtonElement('Cancel!!!', value='cancel', action_id='make-cancel')
 
+    @classmethod
+    def bot_timeout_form(cls) -> BlocksType:
+        return [
+            PlainTextHeaderBlock('Bot Timeout Request'),
+            MarkdownContextBlock('Did someone lewd the bots *_again_*? Sigh...'),
+            UserSelectSectionBlock('Select user', action_id='bot-timeout-user'),
+            ActionsBlock([cls.cancel_button()])
+        ]
+
     @staticmethod
     def build_new_emoji_form_p1() -> BlocksType:
         """Intakes a link to the new emoji"""

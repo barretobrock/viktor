@@ -33,7 +33,7 @@ class Common(object):
     BOT_FIRST_NAME = 'Viktor Bibbilyboopsnug Ivanovich'
     BOT_NICKNAME = 'viktor'
     ADMINS = ['UM35HE6R5']
-    TRIGGERS = ['cah', 'c!']
+    TRIGGERS = ['viktor', 'v!']
     LOG_DIR = HOME.joinpath('logs')
 
     VERSION = __version__
@@ -42,7 +42,9 @@ class Common(object):
     TEST_CHANNEL = 'CM376Q90F'
     EMOJI_CHANNEL = 'CLWCPQ2TV'
     GENERAL_CHANNEL = 'CMEND3W3H'
-    PORT = 5004
+
+    LOG_LEVEL = 'DEBUG'
+    PORT = 5003
 
     SECRETS = None
     SQLALCHEMY_DATABASE_URI = 'postgresql+psycopg2://{usr}:{pwd}@{host}:{port}/{database}'

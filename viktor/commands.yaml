@@ -435,4 +435,3 @@ commands:
             desc: Prevent someone from lewding the bots
             response_cmd:
                 callable: bot_timeout_form
-
