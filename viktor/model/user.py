@@ -22,6 +22,7 @@ class TableSlackUser(Base):
     real_name = Column(VARCHAR(120), nullable=False)
     display_name = Column(VARCHAR(120), nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    is_in_bot_timeout = Column(Boolean, default=False, nullable=False)
     status_emoji = Column(VARCHAR(150))
     status_title = Column(VARCHAR(255))
     what_i_do = Column(VARCHAR(255))

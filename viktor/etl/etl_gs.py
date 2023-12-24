@@ -1,5 +1,4 @@
 import re
-import sys
 import time
 from typing import (
     Dict,
@@ -7,11 +6,12 @@ from typing import (
 )
 
 from pukr import get_logger
-from slack.errors import SlackApiError
+from slack_sdk.errors import SlackApiError
 from slacktools import (
     SecretStore,
     SlackTools,
 )
+from slacktools.api.web.pins import Pin
 from slacktools.gsheet import GSheetAgent
 
 from viktor.core.pin_collector import collect_pins
@@ -66,7 +66,7 @@ class ETL:
     # Prevent automated activity from occurring in these channels
     DENY_LIST_CHANNELS = [IMPO_CHANNEL, CAH_CHANNEL]
 
-    def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
+    def __init__(self, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
         self.log = get_logger()
         self.log.debug('Obtaining credential file...')
         if env.upper() == 'PROD':
@@ -80,19 +80,6 @@ class ETL:
 
         self.psql_client = ViktorPSQLClient(props=props, parent_log=self.log)
 
-        # Determine tables to drop
-        self.log.debug(f'Working on tables: {tables} from db...')
-        tbl_objs = []
-        for table in tables:
-            tbl_objs.append(
-                Base.metadata.tables.get(f'{table.__table_args__.get("schema")}.{table.__tablename__}'))
-        if drop_all:
-            # We're likely doing a refresh - drop/create operations will be for all object
-            self.log.debug(f'Dropping {len(tbl_objs)} listed tables...')
-            Base.metadata.drop_all(self.psql_client.engine, tables=tbl_objs)
-        self.log.debug(f'Creating {len(tbl_objs)} listed tables...')
-        Base.metadata.create_all(self.psql_client.engine, tables=tbl_objs)
-
         if incl_services:
             self.log.debug('Authenticating credentials for services...')
             credstore = SecretStore('secretprops-davaiops.kdbx')
@@ -100,6 +87,20 @@ class ETL:
             self.gsr = GSheetAgent(sec_store=credstore, sheet_key=vik_creds.spreadsheet_key)
             self.st = SlackTools(props=props, main_channel=Development.MAIN_CHANNEL, use_session=False)
             self.log.debug('Completed loading services')
+
+    def handle_table_drops(self, tables: List = None, create_only: bool = True):
+        # Determine tables to drop
+        self.log.debug(f'Working on tables: {tables} from db...')
+        tbl_objs = []
+        for table in tables:
+            tbl_objs.append(
+                Base.metadata.tables.get(f'{table.__table_args__.get("schema")}.{table.__tablename__}'))
+        if not create_only:
+            # We're likely doing a refresh - drop/create operations will be for all object
+            self.log.debug(f'Dropping {len(tbl_objs)} listed tables...')
+            Base.metadata.drop_all(self.psql_client.engine, tables=tbl_objs)
+        self.log.debug(f'Creating {len(tbl_objs)} listed tables...')
+        Base.metadata.create_all(self.psql_client.engine, tables=tbl_objs)
 
     def etl_bot_settings(self):
         self.log.debug('Working on settings...')
@@ -296,43 +297,52 @@ class ETL:
         self.log.debug('Working on quotes...')
         # First we get all the channels
         channels = []
-        prev_len = 0
         channels_resp = self.st.bot.conversations_list(limit=1000, types='public_channel,private_channel')
         for ch in channels_resp.get('channels'):
             self.log.debug(f'Adding {ch["name"]}')
-            channels.append({'id': ch['id'], 'name': ch['name']})
+            channels.append({'id': ch['id'], 'name': ch['name'], 'is_archived': ch['is_archived']})
         # Then we iterate through the channels and collect the pins
-        tbl_objs = []
+        total_objs = 0
         for i, chan in enumerate(channels):
+            tbl_objs = []
             self.log.debug(f'Working on channel {i}/{len(channels)}')
             c_name = chan['name']
             if c_name.startswith('shitpost'):
                 continue
             c_id = chan['id']
+            c_is_archived = chan['is_archived']
             self.log.debug(f'Getting pins for channel: {c_name} ({c_id})')
             try:
                 pins_resp = self.st.bot.pins_list(channel=c_id)
             except SlackApiError as err:
                 # Check if the error is associated with not being in the channel
                 resp = err.response.get('error')
-                self.log.error(f'Received error response: {resp}')
-                pins_resp = {'items': []}
+                if resp == 'not_in_channel' and not c_is_archived:
+                    # Try to join the channel
+                    self.log.warning(f'Joining channel {c_name} real quick...')
+                    self.st.bot.conversations_join(channel=c_id)
+                    time.sleep(1)
+                    pins_resp = self.st.bot.pins_list(channel=c_id)
+                else:
+                    self.log.error(f'Received error response: {resp}')
+                    pins_resp = {'items': []}
             pins = pins_resp.get('items')
             for pin in pins:
-                tbl_objs.append(collect_pins(pin, psql_client=self.psql_client, log=self.log, is_event=False))
+                pin_obj = Pin(pin)
+                tbl_objs.append(collect_pins(pin_obj, psql_client=self.psql_client, log=self.log, is_event=False))
             # Wait so we don't exceed call limits
-            if prev_len < len(tbl_objs):
-                self.log.debug('Cooling off')
-                time.sleep(3)
-            prev_len = len(tbl_objs)
-        with self.psql_client.session_mgr() as session:
-            session.add_all(tbl_objs)
-        self.log.debug(f'Added {len(tbl_objs)} pins')
+            self.log.debug('Cooling off')
+            time.sleep(5)
+            with self.psql_client.session_mgr() as session:
+                session.add_all(tbl_objs)
+                total_objs += len(tbl_objs)
+        self.log.debug(f'Added {total_objs} pins')
 
 
 if __name__ == '__main__':
     from viktor.model import TableResponse
-    etl = ETL(tables=ETL.ALL_TABLES, env='dev')
+    # etl = ETL(env='dev')
+    # etl.handle_table_drops(tables=ETL.ALL_TABLES, create_only=False)
     # etl.etl_acronyms()
     # etl.etl_emojis()
     # etl.etl_okr_perks()
@@ -341,4 +351,3 @@ if __name__ == '__main__':
     # etl.etl_quotes()
     # etl.etl_responses()
     # etl.etl_bot_settings()
-    # etl = ETL(tables=[TablePotentialEmoji], env='prod', drop_all=False)
