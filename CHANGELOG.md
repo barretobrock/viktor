@@ -15,6 +15,17 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.2] - 2024-01-14
+#### Added
+ - Refactored help/shelp structure using block kit
+#### Changed
+ - Uwu improved
+ - Updated events and action endpoints for optimized response times
+#### Fixed
+ - Button game and various other things fixed
+ - Shortcuts work once more
+- [GH-32](../../issues/32) - Uwu now removes 'uwu' at the beginning regardless of capitalization 
+
 ### [2.0.1] - 2023-12-23
 #### Added
  - [GH-27](../../issues/27) - Channel table now updated based on channel actions

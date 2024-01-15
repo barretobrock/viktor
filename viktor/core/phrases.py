@@ -73,13 +73,24 @@ class PhraseBuilders:
         """uwu-fy a message"""
         default_lvl = 2
 
+        word_subs = {
+            'no': 'nuh',
+            'is': 'iz',
+            'has': 'haz',
+            'says': 'sez',
+            'said': 'sed',
+            'the': 'da',
+            'this': 'dis',
+            'that': 'dat',
+        }
+
         if '-l' in msg.split():
             level = msg.split()[msg.split().index('-l') + 1]
             level = int(level) if level.isnumeric() else default_lvl
             text = ' '.join(msg.split()[msg.split().index('-l') + 2:])
         else:
             level = default_lvl
-            text = re.sub(r'^uwu', '', msg).strip()
+            text = re.sub(r'^[Uu][Ww][Uu]', '', msg).strip()
 
         with self.eng.session_mgr() as session:
             # Randomly select 2 graphics
@@ -91,6 +102,21 @@ class PhraseBuilders:
         if level >= 1:
             # Level 1: Letter replacement
             text = text.translate(str.maketrans('rRlL', 'wWwW'))
+            scanned_words = []
+            for word in text.split(' '):
+                if word.lower() in word_subs.keys():
+                    new_word = word_subs[word.lower()]
+                    if word.islower():
+                        scanned_words.append(new_word.lower())
+                    elif word.istitle():
+                        scanned_words.append(new_word.title())
+                    elif word.isupper():
+                        scanned_words.append(new_word.upper())
+                    else:
+                        scanned_words.append(new_word)
+                else:
+                    scanned_words.append(word)
+            text = ' '.join(scanned_words)
 
         if level >= 2:
             # Level 2: Placement of 'uwu' when certain patterns occur
@@ -108,7 +134,7 @@ class PhraseBuilders:
             phrase = []
             for word in text.split(' '):
                 roll = randint(1, 10)
-                if roll < 3 and len(word) > 0:
+                if roll < 2 and len(word) > 0:
                     word = f'{word[0]}-{word}'
                 for pattern, pattern_dict in pattern_allowlist.items():
                     if word.startswith(pattern_dict['start']):

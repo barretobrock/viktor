@@ -1,4 +1,5 @@
 """Configuration setup"""
+import os
 import pathlib
 from typing import Dict
 
@@ -53,7 +54,10 @@ class Common(object):
 
     @classmethod
     def load_secrets(cls):
-        secrets_path = KEY_DIR.joinpath('viktor-secretprops.properties')
+        if cls.ENV == 'DEV':
+            secrets_path = pathlib.Path(__file__).parent.parent.parent.joinpath('secretprops.properties')
+        else:
+            secrets_path = KEY_DIR.joinpath('viktor-secretprops.properties')
         cls.SECRETS = read_secrets(secrets_path)
 
     @classmethod
@@ -76,6 +80,9 @@ class Development(Common):
     DEBUG = True
     USE_RELOADER = False
 
+    def __init__(self):
+        os.environ['VIK_ENV'] = self.ENV
+
 
 class Production(Common):
     """Configuration for development environment"""
@@ -84,3 +91,6 @@ class Production(Common):
     MAIN_CHANNEL = 'CMEND3W3H'  # #general
     TRIGGERS = ['viktor', 'v!']
     DEBUG = False
+
+    def __init__(self):
+        os.environ['VIK_ENV'] = self.ENV

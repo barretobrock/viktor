@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 from typing import TYPE_CHECKING
 
 from flask import (
@@ -44,7 +45,10 @@ from viktor.routes.helpers import (
     get_app_logger,
     get_viktor_eng,
 )
-from viktor.settings import Production
+from viktor.settings import (
+    Development,
+    Production,
+)
 
 if TYPE_CHECKING:
     pass
@@ -52,8 +56,16 @@ if TYPE_CHECKING:
 bp_events = Blueprint('events', __name__)
 
 
-Production.load_secrets()
-props = Production.SECRETS
+ENV = os.getenv('VIK_ENV')
+if ENV is None:
+    raise ValueError('No set env. Cannot proceed')
+if ENV == 'DEV':
+    env_class = Development
+else:
+    env_class = Production
+
+env_class.load_secrets()
+props = env_class.SECRETS
 bolt_app = App(token=props['xoxb-token'], signing_secret=props['signing-secret'], process_before_response=True)
 handler = SlackRequestHandler(app=bolt_app)
 
@@ -75,8 +87,7 @@ def scan_message(ack):
 @bolt_app.event('channel_unarchive')
 @bolt_app.event('channel_rename')
 @bolt_app.event('channel_created')
-def handle_channel_actions(ack):
-    ack()
+def handle_channel_actions():
     event_data = request.json
     logg = get_app_logger()
     eng = get_viktor_eng()
@@ -143,8 +154,7 @@ def handle_channel_actions(ack):
 
 @bolt_app.event('reaction_removed')
 @bolt_app.event('reaction_added')
-def reaction(ack):
-    ack()
+def reaction():
     event_data = request.json
     logg = get_app_logger()
     eng = get_viktor_eng()
@@ -218,9 +228,8 @@ def reaction(ack):
 
 
 @bolt_app.event('emoji_changed')
-def record_new_emojis(ack):
+def record_new_emojis():
     """Make a post about a new emoji being added in the #emoji_suggestions channel"""
-    ack()
     event_data = request.json
     event_dict = event_data['event']
     logg = get_app_logger()
@@ -246,8 +255,7 @@ def record_new_emojis(ack):
 
 
 @bolt_app.event('pin_added')
-def store_pins(ack):
-    ack()
+def store_pins():
     event_data = request.json
     logg = get_app_logger()
     eng = get_viktor_eng()
@@ -273,8 +281,7 @@ def store_pins(ack):
 
 
 @bolt_app.event('pin_removed')
-def remove_pins(ack):
-    ack()
+def remove_pins():
     event_data = request.json
     logg = get_app_logger()
     eng = get_viktor_eng()
@@ -292,10 +299,9 @@ def remove_pins(ack):
 
 
 @bolt_app.event('user_change')
-def notify_new_statuses(ack):
+def notify_new_statuses():
     """Triggered when a user updates their profile info. Gets saved to global dict
     where we then report it in #general"""
-    ack()
     event_data = request.json
     event = event_data['event']
     user_info = event['user']

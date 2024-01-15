@@ -47,7 +47,7 @@ from slacktools.block_kit.elements.formatters import (
     TextFormatter,
 )
 from slacktools.block_kit.elements.input import ButtonElement
-from slacktools.tools import build_commands
+from slacktools.command_processing import build_commands
 from sqlalchemy.sql import (
     and_,
     func,
@@ -110,8 +110,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         self.log.debug('Spinning up SlackBotBase')
         self.is_post_exceptions = self.eng.get_bot_setting(BotSettingType.IS_POST_ERR_TRACEBACK)
         self.st = SlackBotBase(props=props, triggers=self.triggers, main_channel=self.main_channel,
-                               admins=self.admins, is_post_exceptions=self.is_post_exceptions, debug=config.DEBUG,
-                               use_session=True)
+                               admins=self.admins, is_post_exceptions=self.is_post_exceptions, is_debug=config.DEBUG,
+                               is_use_session=False, is_rand_response=True)
         # Pass in commands to SlackBotBase, where task delegation occurs
         self.log.debug('Patching in commands to SBB...')
         self.st.update_commands(commands=self.commands)
@@ -126,12 +126,22 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
         # Place to temporarily store things. Typical structure is activity -> user -> data
         self.state_store = {
-            'react-events': set(),                          # type: Set[str]  # Used to determine unique react events
-            'reacts-store': self.eng.get_reaction_emojis(),  # type: List[str]   # List of reacts to randomly select
-            'users': self.eng.get_all_users(),              # type: Dict[str, TableSlackUser]
+            'react-events': set(),                              # type: Set[str]  # Used to det. unique react events
+            'reacts-store': self.eng.get_reaction_emojis(),     # type: List[str]   # List of reacts to randomly select
+            'users': self.eng.get_all_users(),                  # type: Dict[str, TableSlackUser]
             'new-emoji': {},
-            'new-ltit-req': {}
+            'new-ltit-req': {},
         }
+        self.st.rand_response_methods = [
+            self.uwu,
+            self.uwu,
+            self.uwu,
+            self.uwu,
+            self.word_emoji,
+            self.randcap,
+            self.randcap,
+            self.randcap
+        ]
 
         self.log.debug(f'{self.bot_name} booted up!')
 
@@ -223,6 +233,14 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 resp = self.update_user_ltips(channel, self.admins[0], target_user=user, ltits=game_value)
                 if resp is not None:
                     self.st.send_message(channel, resp, thread_ts=thread_ts)
+        elif action_id == 'help':
+            self.st.send_message(channel=channel, blocks=self.generate_intro(), thread_ts=thread_ts)
+        elif action_id.startswith('shelp'):
+            msg = action_id.split('-', maxsplit=1)
+            cmd = msg[0]
+            blocks = self.search_help_block(f'{cmd[:-1]} -{cmd[-1:]} {msg[1]}')
+            for grp in range(0, len(blocks), 50):
+                self.st.send_message(channel=channel, blocks=blocks[grp: grp + 50], thread_ts=thread_ts)
         elif action_id == 'new-ifact':
             self.add_ifact(user=user, channel=channel, txt=action_value)
         elif action_id == 'new-role-p1':
@@ -290,7 +308,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             # Compile all the details together and try to get the emoji uploaded
             url = self.state_store['new-emoji'].get(user).get('url')
             self.add_emoji(user, channel, url=url, new_name=action_value)
-        elif action_dict.get('type') == 'message-shortcut':
+        elif action_dict.get('type') in ['message-shortcut', 'shortcut']:
             # Deal  with message shortcuts
             if action_id == 'uwu':
                 # Uwu the message
@@ -537,7 +555,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             '9': ':nine:',
             '0': ':zero:',
         })
-        return ''.join(char_dict.get(c.lower(), c) for c in msg)
+        return ''.join(char_dict.get(c.lower(), '') for c in msg)
 
     @staticmethod
     def access_something() -> str:
@@ -752,7 +770,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         fact = TableResponse(response_type=ResponseType.FACT, category=ResponseCategory.FOILHAT, text=txt)
         with self.eng.session_mgr() as session:
             session.add(fact)
-        self.st.send_message(channel=channel, message=f'Fact added! id:`{fact.id}`\n{fact.text}')
+            msg = f'Fact added! id:`{fact.id}`\n{fact.text}'
+        self.st.send_message(channel=channel, message=msg)
 
     def get_fart(self, user: str, channel: str):
         fart_id = randint(1, 3000)
@@ -835,7 +854,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             session.expunge_all()
         final_perks = self._build_perks_list(perks)
         return [
-            PlainTextHeaderBlock(f'Perks for our very highly valued `{user_obj.name}`!'),
+            PlainTextHeaderBlock(f'Perks for our very highly valued `{user_obj.display_name}`!'),
             MarkdownContextBlock('you\'ll _really_ never see anything better, trust us!'),
             MarkdownContextBlock('Here are the _amazing_ perks you have unlocked!!'),
             MarkdownSectionBlock(final_perks),
@@ -858,7 +877,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             with self.eng.session_mgr() as session:
                 session.add(user_obj)
                 user_obj.role_title = new_title
-        form2 = self.build_role_input_form_p2(title=new_title, existing_desc=user_obj.role_desc)
+                existing_desc = user_obj.role_desc
+        form2 = self.build_role_input_form_p2(title=new_title, existing_desc=existing_desc)
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p2',
                                             blocks=form2)
 
@@ -878,7 +898,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         with self.eng.session_mgr() as session:
             session.add(user_obj)
             user_obj.level += 1
-        self.st.send_message(channel, f'Level for *`{user_obj.name}`* updated to *`{user_obj.level}`*.')
+            msg = f'Level for *`{user_obj.display_name}`* updated to *`{user_obj.level}`*.'
+        self.st.send_message(channel, msg)
 
     def update_user_ltips(self, channel: str, requesting_user: str, target_user: str, ltits: float) -> \
             Optional[str]:
@@ -893,8 +914,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         with self.eng.session_mgr() as session:
             session.add(user_obj)
             user_obj.ltits += ltits
-        self.st.send_message(
-            channel, f'LTITs for  *`{user_obj.name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.')
+            msg = f'LTITs for  *`{user_obj.display_name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.'
+
+        self.st.send_message(channel, msg)
 
     def show_roles(self, user: str = None) -> Union[BlocksType, str]:
         """Prints users roles to channel"""
@@ -922,9 +944,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             with self.eng.session_mgr() as session:
                 users = session.query(TableSlackUser).all()
                 session.expunge_all()
-            roles_output += [
-                MarkdownSectionBlock(build_employee_info(emp=u)) for u in users
-            ]
+                roles_output += [
+                    MarkdownSectionBlock(build_employee_info(emp=u)) for u in users
+                ]
         else:
             # Printing role for an individual user
             user_obj = self.eng.get_user_from_hash(user_hash=user)

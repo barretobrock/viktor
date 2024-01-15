@@ -1,4 +1,6 @@
 import json
+import os
+import re
 
 from flask import (
     Blueprint,
@@ -7,27 +9,53 @@ from flask import (
     request,
 )
 import requests
+from slack_bolt import App
+from slack_bolt.adapter.flask import SlackRequestHandler
 
 from viktor.routes.helpers import get_app_bot
+from viktor.settings import (
+    Development,
+    Production,
+)
 
 bp_actions = Blueprint('actions', __name__)
 
+ENV = os.getenv('VIK_ENV')
+if ENV is None:
+    raise ValueError('No set env. Cannot proceed')
+if ENV == 'DEV':
+    env_class = Development
+else:
+    env_class = Production
+
+env_class.load_secrets()
+props = env_class.SECRETS
+bolt_app = App(token=props['xoxb-token'], signing_secret=props['signing-secret'], process_before_response=True)
+handler = SlackRequestHandler(app=bolt_app)
+
 
 @bp_actions.route('/api/actions', methods=['GET', 'POST'])
+def pass_action():
+    """Handles a slack event"""
+    return handler.handle(req=request)
+
+
+@bolt_app.shortcut(re.compile('.*'))
+@bolt_app.action(re.compile('.*'))
 def handle_action(ack):
     """Handle a response when a user clicks a button from Slack"""
     ack()
     event_data = json.loads(request.form["payload"])
     user = event_data['user']['id']
     # if channel empty, it's a shortcut
-    if event_data.get('channel') is None:
+    if event_data.get('channel') is None or event_data['type'] == 'message_action':
         # shortcut - grab callback, put in action dict according to expected ac
         action = {
             'action_id': event_data.get('callback_id'),
             'action_value': '',
             'type': 'shortcut'
         }
-        channel = current_app.config.get('MAIN_CHANNEL')
+        channel = event_data.get('channel', {'id': current_app.config.get('MAIN_CHANNEL')}).get('id')
     else:
         # Action from button click, etc...
         channel = event_data['channel']['id']

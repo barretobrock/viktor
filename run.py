@@ -3,7 +3,7 @@
 from viktor.settings.config import Production
 
 if __name__ == '__main__':
-    Production.build_db_engine()
+    Production().build_db_engine()
     from viktor.app import create_app
 
     app = create_app(config_class=Production, props=Production.SECRETS)
