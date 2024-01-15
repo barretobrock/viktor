@@ -236,7 +236,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms, UWU):
                 resp = self.update_user_ltips(self.admins[0], target_user=user, ltits=game_value)
                 blocks = [
                     MarkdownContextBlock('Button Game Results!'),
-                    MarkdownSectionBlock(f'<@{user}>, You selected :{emoji}:, which carried a market value'
+                    MarkdownSectionBlock(f'<@{user}>, You selected :{emoji}:, \nwhich carried a market value'
                                          f' of :sparkles: *`{game_value}`* :diddlecoin::sparkles:'),
                     MarkdownContextBlock(resp)
                 ]
