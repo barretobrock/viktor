@@ -31,26 +31,7 @@ from viktor.model import (
     ResponseType,
     TableAcronym,
     TableResponse,
-    TableUwu,
 )
-
-TEXT_KEYS = ['text']
-
-
-def recursive_uwu(key, val, replace_func):
-    """Iterates through a nested dict, replaces text areas with uwu"""
-    if isinstance(val, dict):
-        items = val.items()
-    elif isinstance(val, (list, tuple)):
-        items = enumerate(val)
-    else:
-        if isinstance(key, str) and key in TEXT_KEYS:
-            return replace_func(val)
-        return val
-
-    for k, v in items:
-        val[k] = recursive_uwu(k, v, replace_func)
-    return val
 
 
 class PhraseBuilders:
@@ -68,88 +49,6 @@ class PhraseBuilders:
 
     def __init__(self, eng: ViktorPSQLClient):
         self.eng = eng
-
-    def uwu(self, msg: str) -> str:
-        """uwu-fy a message"""
-        default_lvl = 2
-
-        word_subs = {
-            'no': 'nuh',
-            'is': 'iz',
-            'has': 'haz',
-            'says': 'sez',
-            'said': 'sed',
-            'the': 'da',
-            'this': 'dis',
-            'that': 'dat',
-        }
-
-        if '-l' in msg.split():
-            level = msg.split()[msg.split().index('-l') + 1]
-            level = int(level) if level.isnumeric() else default_lvl
-            text = ' '.join(msg.split()[msg.split().index('-l') + 2:])
-        else:
-            level = default_lvl
-            text = re.sub(r'^[Uu][Ww][Uu]', '', msg).strip()
-
-        with self.eng.session_mgr() as session:
-            # Randomly select 2 graphics
-            chars = [x.graphic for x in session.query(TableUwu.graphic).order_by(func.random()).limit(2).all()]
-            prefix, suffix = chars
-            prefix = prefix.replace('`', ' ')
-            suffix = suffix.replace('`', ' ')
-
-        if level >= 1:
-            # Level 1: Letter replacement
-            text = text.translate(str.maketrans('rRlL', 'wWwW'))
-            scanned_words = []
-            for word in text.split(' '):
-                if word.lower() in word_subs.keys():
-                    new_word = word_subs[word.lower()]
-                    if word.islower():
-                        scanned_words.append(new_word.lower())
-                    elif word.istitle():
-                        scanned_words.append(new_word.title())
-                    elif word.isupper():
-                        scanned_words.append(new_word.upper())
-                    else:
-                        scanned_words.append(new_word)
-                else:
-                    scanned_words.append(word)
-            text = ' '.join(scanned_words)
-
-        if level >= 2:
-            # Level 2: Placement of 'uwu' when certain patterns occur
-            pattern_allowlist = {
-                'uwu': {
-                    'start': 'u',
-                    'anywhere': ['nu', 'ou', 'du', 'un', 'bu'],
-                },
-                'owo': {
-                    'start': 'o',
-                    'anywhere': ['ow', 'bo', 'do', 'on'],
-                }
-            }
-            # Rebuild the phrase letter by letter
-            phrase = []
-            for word in text.split(' '):
-                roll = randint(1, 10)
-                if roll < 2 and len(word) > 0:
-                    word = f'{word[0]}-{word}'
-                for pattern, pattern_dict in pattern_allowlist.items():
-                    if word.startswith(pattern_dict['start']):
-                        word = word.replace(pattern_dict['start'], pattern)
-                    else:
-                        for fragment in pattern_dict['anywhere']:
-                            if fragment in word:
-                                word = word.replace(pattern_dict['start'], pattern)
-                phrase.append(word)
-            text = ' '.join(phrase)
-
-            # Last step, insert random characters
-            text = f'{prefix} {text} {suffix}'
-
-        return text
 
     @staticmethod
     def _word_result_organiser(word_results: List[TableResponse]) -> \
@@ -411,17 +310,6 @@ class PhraseBuilders:
 
     def conspiracy_fact(self) -> Union[str, List[Dict]]:
         return self.facts(category=ResponseCategory.FOILHAT)
-
-    def affirmation(self) -> str:
-        resp = requests.get('https://www.affirmations.dev/')
-        if resp.status_code == 200:
-            # Get an uwu graphic
-            with self.eng.session_mgr() as session:
-                header, footer = [x.graphic for x in session.query(TableUwu.graphic)
-                                  .order_by(func.random()).limit(2).all()]
-            aff_txt = resp.json().get('affirmation')
-            self.uwu(aff_txt)
-            return f'{header} {aff_txt} {footer}'
 
     @staticmethod
     def dadjoke():

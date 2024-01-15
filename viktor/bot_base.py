@@ -55,8 +55,9 @@ from sqlalchemy.sql import (
 
 from viktor import ROOT_PATH
 from viktor.core.linguistics import Linguistics
-from viktor.core.phrases import (
-    PhraseBuilders,
+from viktor.core.phrases import PhraseBuilders
+from viktor.core.uwu import (
+    UWU,
     recursive_uwu,
 )
 from viktor.db_eng import ViktorPSQLClient
@@ -78,7 +79,7 @@ if TYPE_CHECKING:
     )
 
 
-class Viktor(Linguistics, PhraseBuilders, Forms):
+class Viktor(Linguistics, PhraseBuilders, Forms, UWU):
     """Handles messaging to and from Slack API"""
 
     def __init__(self, eng: ViktorPSQLClient, props: Dict, parent_log: logger,
@@ -133,10 +134,10 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             'new-ltit-req': {},
         }
         self.st.rand_response_methods = [
-            self.uwu,
-            self.uwu,
-            self.uwu,
-            self.uwu,
+            self.convert_to_uwu,
+            self.convert_to_uwu,
+            self.convert_to_uwu,
+            self.convert_to_uwu,
             self.word_emoji,
             self.randcap,
             self.randcap,
@@ -227,12 +228,21 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
         if 'buttongame' in action_id:
             # Button game stuff
-            game_value = action_value.split('|')[1]
+            game_info = action_value.split('|')
+            game_value = game_info[1]
+            emoji = game_info[2]
             if game_value.isnumeric():
                 game_value = int(game_value) - 5000
-                resp = self.update_user_ltips(channel, self.admins[0], target_user=user, ltits=game_value)
-                if resp is not None:
-                    self.st.send_message(channel, resp, thread_ts=thread_ts)
+                resp = self.update_user_ltips(self.admins[0], target_user=user, ltits=game_value)
+                blocks = [
+                    MarkdownContextBlock('Button Game Results!'),
+                    MarkdownSectionBlock(f'<@{user}>, You selected :{emoji}:, which carried a market value'
+                                         f' of :sparkles: *`{game_value}`* :diddlecoin::sparkles:'),
+                    MarkdownContextBlock(resp)
+                ]
+                self.st.send_message(channel, blocks=blocks, thread_ts=thread_ts)
+            else:
+                self.st.send_message(channel, self.convert_to_uwu('Oh no, something broke!'))
         elif action_id == 'help':
             self.st.send_message(channel=channel, blocks=self.generate_intro(), thread_ts=thread_ts)
         elif action_id.startswith('shelp'):
@@ -264,8 +274,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 message = f'{user_obj.display_name} is_in_bot_timeout toggled to `{new_state}`'
             self.st.private_channel_message(user_id=user, channel=channel, message=message)
         elif action_id == 'levelup-user':
-            self.update_user_level(channel=channel, requesting_user=user,
-                                   target_user=action_dict.get('selected_user'))
+            resp = self.update_user_level(requesting_user=user, target_user=action_dict.get('selected_user'))
+            self.st.send_message(channel=channel, message=resp, thread_ts=thread_ts)
         elif action_id == 'ltits-user-p1':
             new_ltit_req: Dict
             new_ltit_req = {user: action_dict.get('selected_user')}
@@ -295,7 +305,8 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                                      message=f'Parsed number is bad format for float conversion: `{ltits}`',
                                      thread_ts=thread_ts)
                 return None
-            self.update_user_ltips(channel=channel, requesting_user=user, target_user=target_user, ltits=ltits)
+            resp = self.update_user_ltips(requesting_user=user, target_user=target_user, ltits=ltits)
+            self.st.send_message(channel=channel, message=resp, thread_ts=thread_ts)
         elif action_id == 'new-emoji-p1':
             # Store this user's first portion of the new emoji request
             new_emoji_req = {user: {'url': action_value}}
@@ -312,7 +323,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             # Deal  with message shortcuts
             if action_id == 'uwu':
                 # Uwu the message
-                self.handle_menu_action_msg_transform_and_send(event_dict=event_dict, funktsioon=self.uwu)
+                self.handle_menu_action_msg_transform_and_send(event_dict=event_dict, funktsioon=self.convert_to_uwu)
             elif action_id == 'emojiword':
                 # Emojiword the message
                 self.handle_menu_action_msg_transform_and_send(event_dict=event_dict, funktsioon=self.word_emoji)
@@ -323,7 +334,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             # TODO Otherwise treat the action as a phrase?
             pass
 
-    def uwu_that(self, channel: str, ts: str, thread_ts: str = None) -> Union[BlocksType, str]:
+    def uwu_that(self, channel: str, ts: str, thread_ts: str = None) -> Union[BlocksType, Dict, str]:
         if thread_ts is None:
             prev_msg: Message
             prev_msg = self.st.get_previous_msg_in_channel(channel=channel, timestamp=ts)
@@ -339,18 +350,33 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             blocks = prev_msg.blocks
         except AttributeError:
             message = prev_msg.text
+
+        if blocks is None and message is None and 'attachments' in prev_msg.__dict__.keys():
+            # Try to extract via attachments
+            attachments = prev_msg.attachments
+            replaced_atts = []
+            for i, block in enumerate(attachments):
+                if isinstance(block, BaseApiObject):
+                    block = block.asdict()
+                replaced_atts.append(recursive_uwu(i, block, replace_func=self.convert_to_uwu))
+            att_dict = {'attachments': replaced_atts}
+            for p in ['subtype', 'type', 'text']:
+                if p in prev_msg.asdict().keys():
+                    att_dict[p] = prev_msg.asdict()[p]
+            return att_dict
+
         if blocks is not None:
             # Convert blocks to uwu
             replaced_blocks = []
             for i, block in enumerate(blocks):
                 if isinstance(block, BaseApiObject):
                     block = block.asdict()
-                replaced_blocks.append(recursive_uwu(i, block, replace_func=self.uwu))
+                replaced_blocks.append(recursive_uwu(i, block, replace_func=self.convert_to_uwu))
             return replaced_blocks
         elif message is not None:
-            return self.uwu(message)
+            return self.convert_to_uwu(message)
         else:
-            return self.uwu('I really can\'t work with a message like that. How dare you. Bitch.')
+            return self.convert_to_uwu('I really can\'t work with a message like that. How dare you. Bitch.')
 
     def handle_menu_action_msg_transform_and_send(self, event_dict: Dict, funktsioon: Callable):
         """Stores the process to handle shortcuts through message menu to transform a message with a certain
@@ -687,8 +713,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
                 neg_values.append(val)
             else:
                 val = 0
+            emoji = emojis[i - 1]
             btn_blocks.append(
-                ButtonElement(f':{emojis[i - 1]}:', value=f'bg|{val + 5000}', action_id=f'buttongame-{i}')
+                ButtonElement(f':{emoji}:', value=f'bg|{val + 5000}|{emoji}', action_id=f'buttongame-{i}')
             )
 
         blocks = [
@@ -882,7 +909,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New role form, p2',
                                             blocks=form2)
 
-    def update_user_level(self, channel: str, requesting_user: str, target_user: str) -> Optional[str]:
+    def update_user_level(self, requesting_user: str, target_user: str) -> str:
         """Increment the user's level"""
 
         if requesting_user not in self.admins:
@@ -899,10 +926,9 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
             session.add(user_obj)
             user_obj.level += 1
             msg = f'Level for *`{user_obj.display_name}`* updated to *`{user_obj.level}`*.'
-        self.st.send_message(channel, msg)
+        return msg
 
-    def update_user_ltips(self, channel: str, requesting_user: str, target_user: str, ltits: float) -> \
-            Optional[str]:
+    def update_user_ltips(self, requesting_user: str, target_user: str, ltits: float) -> str:
         """Increment the user's level"""
 
         if requesting_user not in self.admins:
@@ -914,9 +940,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
         with self.eng.session_mgr() as session:
             session.add(user_obj)
             user_obj.ltits += ltits
-            msg = f'LTITs for  *`{user_obj.display_name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.'
-
-        self.st.send_message(channel, msg)
+            return f'LTITs for  *`{user_obj.display_name}`* updated by *`{ltits}`* to *`{user_obj.ltits}`*.'
 
     def show_roles(self, user: str = None) -> Union[BlocksType, str]:
         """Prints users roles to channel"""
@@ -965,5 +989,5 @@ class Viktor(Linguistics, PhraseBuilders, Forms):
 
     def good_bot(self, user: str) -> str:
         if user in self.admins:
-            return 'thanks daddy' + '!' * randint(2, 10)
+            return 'thanks daddy' + '!' * randint(1, 10)
         return f'thanks, <@{user}>!'

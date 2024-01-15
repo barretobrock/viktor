@@ -338,9 +338,9 @@ commands:
                 - random
             desc: Makes text pwettiew and easiew to uwundewstand (defaults to highest uwu level)
             response_cmd:
-                callable_name: uwu
+                callable_name: convert_to_uwu
                 args:
-                    - raw_message
+                    - cleaned_message
         ^uwu\s?that:
             title: uwu that
             tags:
@@ -380,13 +380,6 @@ commands:
             desc: Exactly one dadjoke.
             response_cmd:
                 callable_name: dadjoke
-        ^(diddle my brain|affirmation):
-            title: affirmation
-            tags:
-                - random
-            desc: A positive brain-diddling
-            response_cmd:
-                callable_name: affirmation
         ^(ag|acro[-]?guess):
             title: acro-guess
             tags:
@@ -446,7 +439,7 @@ commands:
             response_cmd:
                 callable_name: compliment
                 args:
-                    - raw_message
+                    - cleaned_message
                     - match_pattern
                     - user
         ^facts?:

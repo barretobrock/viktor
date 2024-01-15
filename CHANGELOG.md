@@ -15,6 +15,13 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.3] - 2024-01-15
+#### Changed
+ - Broke out UWU class
+ - Button game output reformatted to blocks
+#### Fixed
+ - Slash commands requiring input work again
+ 
 ### [2.0.2] - 2024-01-14
 #### Added
  - Refactored help/shelp structure using block kit
