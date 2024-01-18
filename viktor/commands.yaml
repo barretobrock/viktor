@@ -70,7 +70,7 @@ commands:
                 - ui
             desc: Add emojis in 2 or fewer steps!
             response_cmd:
-                callable_name: add_emoji_form_p1
+                callable_name: add_emoji_p1
                 args:
                     - user
                     - channel

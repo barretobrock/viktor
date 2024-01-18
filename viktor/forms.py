@@ -35,7 +35,7 @@ class Forms:
 
     @staticmethod
     def cancel_button() -> ButtonElement:
-        return ButtonElement('Cancel!!!', value='cancel', action_id='make-cancel')
+        return ButtonElement('Cancel!!!', value='cancel', action_id='make-cancel', style='danger')
 
     @classmethod
     def bot_timeout_form(cls) -> BlocksType:
@@ -46,21 +46,38 @@ class Forms:
             ActionsBlock([cls.cancel_button()])
         ]
 
-    @staticmethod
-    def build_new_emoji_form_p1() -> BlocksType:
+    @classmethod
+    def build_new_emoji_form_p1(cls, is_many: bool = False) -> BlocksType:
         """Intakes a link to the new emoji"""
+        btns = [cls.cancel_button()]
+        if is_many:
+            title = 'Multi-Emojifier 3000'
+            instructions = 'Just put each url on a new line (CTRL+ENTER) or separate with a pipe `|` real good like'
+        else:
+            title = 'Single Emoji indiddler 3000'
+            instructions = 'Insert emoji URL here uwu'
+            btns = [ButtonElement('Tell you hwat I gotta load.', value='new-many-emoji',
+                                  action_id='new-many-emoji')] + btns
+        dispatch = DispatchActionConfigElement(trigger_on_enter_pressed=True)
         return [
-            PlainTextInputBlock(label='Insert emoji URL here uwu', action_id='new-emoji-p1')
+            PlainTextHeaderBlock(title),
+            PlainTextInputBlock(label=instructions, action_id='new-emoji-p1', multiline=is_many,
+                                dispatch_action_elem=dispatch),
+            ActionsBlock(btns)
         ]
 
     @classmethod
-    def build_new_emoji_form_p2(cls, url: str, suggested_name: str) -> BlocksType:
+    def build_new_emoji_form_p2(cls, url: str, suggested_name: str, emoji_id: int, taken_name: str = None) -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
+        blocks = []
+        if taken_name is not None:
+            blocks.append(MarkdownSectionBlock(f':warning:*Note: `{taken_name}` was taken*:warning:'))
         dispatch = DispatchActionConfigElement(trigger_on_enter_pressed=True)
-        return [
+        return blocks + [
             ImageBlock(url, suggested_name, title=PlainTextElement('Here\'s how your emoji will look...')),
             PlainTextInputBlock(label='Type the name of the emoji without ":"',
-                                initial_value=suggested_name, action_id='new-emoji-p2', dispatch_action_elem=dispatch),
+                                initial_value=suggested_name, action_id=f'new-emoji-p2-{emoji_id}',
+                                dispatch_action_elem=dispatch),
             ActionsBlock([cls.cancel_button()])
         ]
 

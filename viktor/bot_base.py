@@ -112,7 +112,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms, UWU):
         self.is_post_exceptions = self.eng.get_bot_setting(BotSettingType.IS_POST_ERR_TRACEBACK)
         self.st = SlackBotBase(props=props, triggers=self.triggers, main_channel=self.main_channel,
                                admins=self.admins, is_post_exceptions=self.is_post_exceptions, is_debug=config.DEBUG,
-                               is_use_session=False, is_rand_response=True)
+                               is_use_session=True, is_rand_response=True)
         # Pass in commands to SlackBotBase, where task delegation occurs
         self.log.debug('Patching in commands to SBB...')
         self.st.update_commands(commands=self.commands)
@@ -307,18 +307,17 @@ class Viktor(Linguistics, PhraseBuilders, Forms, UWU):
                 return None
             resp = self.update_user_ltips(requesting_user=user, target_user=target_user, ltits=ltits)
             self.st.send_message(channel=channel, message=resp, thread_ts=thread_ts)
+        elif action_id == 'new-many-emoji':
+            self.add_emoji_p1(user=user, channel=channel, message='', is_many=True)
         elif action_id == 'new-emoji-p1':
             # Store this user's first portion of the new emoji request
-            new_emoji_req = {user: {'url': action_value}}
-            self.state_store['new-emoji'].update(new_emoji_req)
-            # Parse out the file name from the url
-            emoji_name = os.path.splitext(os.path.split(urlparse(action_value).path)[1])[0]
-            # Send the second portion
-            self.add_emoji_form_p2(user=user, channel=channel, url=action_value, suggested_name=emoji_name)
-        elif action_id == 'new-emoji-p2':
+            self.process_incoming_emoji_urls(user=user, channel=channel, raw_urls=action_value)
+        elif action_id.startswith('new-emoji-p2-'):
             # Compile all the details together and try to get the emoji uploaded
-            url = self.state_store['new-emoji'].get(user).get('url')
-            self.add_emoji(user, channel, url=url, new_name=action_value)
+            # Extract emoji_id
+            emoji_id = int(action_id.split('-')[-1])
+            emoji_dict = self.state_store['new-emoji'].get(user)[emoji_id]
+            self.add_emoji(user, channel, url=emoji_dict['url'], new_name=emoji_dict['name'])
         elif action_dict.get('type') in ['message-shortcut', 'shortcut']:
             # Deal  with message shortcuts
             if action_id == 'uwu':
@@ -741,7 +740,25 @@ class Viktor(Linguistics, PhraseBuilders, Forms, UWU):
         msg = re.sub(match_pattern, '', message).strip()
         return self.st.build_phrase(msg)
 
-    def add_emoji_form_p1(self, user: str, channel: str, message: str):
+    def process_incoming_emoji_urls(self, user: str, channel: str, raw_urls: str):
+        # Store this user's first portion of the new emoji request
+        urls = re.split(r'[\r\n|]', raw_urls)
+        self.log.debug(f'{len(urls)} urls processed for emoji extraction.')
+        emoji_reqs = {}
+        for url in urls:
+            url = url.strip()
+            emoji_reqs[id(url)] = {
+                'url': url,
+                'name': os.path.splitext(os.path.split(urlparse(url).path)[1])[0]
+            }
+        self.state_store['new-emoji'].update({user: emoji_reqs})
+        self.log.debug(f'Stored urls in new-emoji state. Keys for user: '
+                       f'{len(self.state_store["new-emoji"][user].keys())}')
+        for emoji_id, emoji_dict in emoji_reqs.items():
+            self.add_emoji_p2(user=user, channel=channel, url=emoji_dict['url'], suggested_name=emoji_dict['name'],
+                              emoji_id=emoji_id)
+
+    def add_emoji_p1(self, user: str, channel: str, message: str, is_many: bool = False):
         """Builds form to intake emoji and upload"""
         # If the message already contains a url, avoid sending the URL collection form and just process the
         #   info immediately as it would be for part 2
@@ -752,27 +769,27 @@ class Viktor(Linguistics, PhraseBuilders, Forms, UWU):
                 url = url_rgx.group()
         if url is not None:
             # Store this user's first portion of the new emoji request
-            new_emoji_req = {user: {'url': url}}
-            self.state_store['new-emoji'].update(new_emoji_req)
-            # Parse out the file name from the url
-            emoji_name = os.path.splitext(os.path.split(urlparse(url).path)[1])[0]
-            self.add_emoji_form_p2(user=user, channel=channel, url=url, suggested_name=emoji_name)
+            self.process_incoming_emoji_urls(user=user, channel=channel, raw_urls=url)
+            # TODO: Back button, to go back and edit something
         else:
-            form1 = self.build_new_emoji_form_p1()
+            form1 = self.build_new_emoji_form_p1(is_many=is_many)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p1',
                                                 blocks=form1)
 
-    def add_emoji_form_p2(self, user: str, channel: str, url: str, suggested_name: str):
+    def add_emoji_p2(self, user: str, channel: str, url: str, suggested_name: str, emoji_id: int):
         """Part 2 of emoji intake"""
         # Check name against existing
+        taken_name = None
         with self.eng.session_mgr() as session:
             exists: TableEmoji
             exists = session.query(TableEmoji).filter(TableEmoji.name == suggested_name).one_or_none()
             if exists is not None:
                 # Name already exists. Modify it
                 suggested_name += f'{exists.emoji_id}'
+                taken_name = exists.name
 
-        form2 = self.build_new_emoji_form_p2(url, suggested_name=suggested_name)
+        form2 = self.build_new_emoji_form_p2(url, suggested_name=suggested_name, emoji_id=emoji_id,
+                                             taken_name=taken_name)
         _ = self.st.private_channel_message(user_id=user, channel=channel, message='New emoji form, p2',
                                             blocks=form2)
 

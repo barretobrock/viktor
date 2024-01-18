@@ -31,3 +31,5 @@ test:
 	tox
 rebuild-test:
 	tox --recreate -e py311
+ngrok:
+	ngrok http 5003

@@ -15,6 +15,12 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.4] - 2024-01-17
+#### Added
+ - Capability to handle upload of multiple emojis through one starting form
+#### Fixed
+ - Emoji adding support now works again
+ 
 ### [2.0.3] - 2024-01-15
 #### Changed
  - Broke out UWU class
