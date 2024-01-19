@@ -15,6 +15,11 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.5] - 2024-01-19
+#### Fixed
+ - Issue where user can't be removed from bot timeout now resolved
+ - New emoji name is now properly added before being uploaded
+ 
 ### [2.0.4] - 2024-01-17
 #### Added
  - Capability to handle upload of multiple emojis through one starting form

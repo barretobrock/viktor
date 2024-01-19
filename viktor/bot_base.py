@@ -195,14 +195,16 @@ class Viktor(Linguistics, PhraseBuilders, Forms, UWU):
 
     def toggle_user_bot_timeout(self, user: str) -> Optional[bool]:
         self.log.debug(f'Handling bot timeout toggle for user {user}')
+        user_obj = self.eng.get_user_from_hash(user)
+        if user_obj is None:
+            return None
         with self.eng.session_mgr() as session:
-            user_obj = session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == user).one_or_none()
-            if user_obj is None:
-                self.log.error('User not found in table.')
-                return
-            user_obj.is_in_bot_timeout = not user_obj.is_in_bot_timeout
-            session.expunge(user_obj)
-            self.state_store['users'][user] = user_obj
+            session.query(TableSlackUser).filter(TableSlackUser.slack_user_hash == user).update({
+                TableSlackUser.is_in_bot_timeout: not user_obj.is_in_bot_timeout
+            })
+
+        user_obj = self.eng.get_user_from_hash(user)
+        self.state_store['users'][user] = user_obj
         return user_obj.is_in_bot_timeout
 
     def process_slash_command(self, event_dict: Dict):
@@ -317,7 +319,7 @@ class Viktor(Linguistics, PhraseBuilders, Forms, UWU):
             # Extract emoji_id
             emoji_id = int(action_id.split('-')[-1])
             emoji_dict = self.state_store['new-emoji'].get(user)[emoji_id]
-            self.add_emoji(user, channel, url=emoji_dict['url'], new_name=emoji_dict['name'])
+            self.add_emoji(user, channel, url=emoji_dict['url'], new_name=action_value)
         elif action_dict.get('type') in ['message-shortcut', 'shortcut']:
             # Deal  with message shortcuts
             if action_id == 'uwu':
